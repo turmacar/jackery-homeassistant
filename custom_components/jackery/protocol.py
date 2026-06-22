@@ -107,6 +107,13 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         icon="mdi:monitor-screenshot",
         read_keys=("sltb", "slt"),
     ),
+    "pss": JackeryControlSpec(
+        key="pss",
+        slug="pss",
+        name="Grid / Station",
+        platform="switch",
+        icon="mdi:transmission-tower",
+    ),
 }
 
 CHARGING_PLAN_SWITCH_DP = "107"

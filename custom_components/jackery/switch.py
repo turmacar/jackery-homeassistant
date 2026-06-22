@@ -23,7 +23,12 @@ from .protocol import (
     supported_keys,
 )
 
-SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc")
+SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss")
+
+# Transfer Switch commands: key -> (action_id, cmd)
+TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
+    "pss": (4, 4),
+}
 SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
         key=spec.key,
@@ -173,13 +178,24 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
 
     async def _async_set_value(self, raw_state: int) -> None:
         """Set the underlying Jackery property."""
+        key = self.entity_description.key
         try:
-            await self._api.async_set_device_property(
-                self._device_id,
-                self._device_sn,
-                self._slug,
-                raw_state,
-            )
+            box_cmd = TRANSFER_SWITCH_COMMANDS.get(key)
+            if box_cmd is not None:
+                action_id, cmd = box_cmd
+                await self._api.async_send_transfer_switch_command(
+                    self._device_id,
+                    self._device_sn,
+                    action_id,
+                    {"cmd": cmd, key: raw_state},
+                )
+            else:
+                await self._api.async_set_device_property(
+                    self._device_id,
+                    self._device_sn,
+                    self._slug,
+                    raw_state,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -188,7 +204,7 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
             ) from err
 
         updated_data = dict(self.coordinator.data or {})
-        updated_data[self.entity_description.key] = raw_state
+        updated_data[key] = raw_state
         self.coordinator.async_set_updated_data(updated_data)
         await self.coordinator.async_request_refresh()
 

@@ -304,6 +304,35 @@ class JackeryAPI:
                     await self._async_reset_control_client(client)
                     client = await self._async_get_control_client()
 
+    async def async_send_transfer_switch_command(
+        self,
+        device_id: str,
+        device_sn: str,
+        action_id: int,
+        body: dict,
+    ) -> None:
+        """Send a raw MQTT command using the Transfer Switch protocol."""
+        if socketry is None:
+            raise RuntimeError("socketry is not installed")
+
+        async with self._control_write_lock:
+            client = await self._async_get_control_client()
+
+            for attempt in range(2):
+                try:
+                    await client._publish_command(device_sn, action_id, body)
+                    return
+                except (
+                    socketry.AuthenticationError,
+                    socketry.MqttError,
+                    socketry.SocketryError,
+                ):
+                    if attempt == 1:
+                        await self._async_reset_control_client(client)
+                        raise
+                    await self._async_reset_control_client(client)
+                    client = await self._async_get_control_client()
+
     async def async_set_device_dp(
         self,
         device_id: str,
