@@ -22,12 +22,14 @@ from .protocol import (
     has_charging_plan_switch_support,
     supported_keys,
 )
+from .plan import JackeryPlanSwitch, _get_plans, has_plans
 
-SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss")
+SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss", "ups")
 
 # Transfer Switch commands: key -> (action_id, cmd)
 TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
     "pss": (4, 4),
+    "ups": (6, 6),
 }
 SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
@@ -82,6 +84,24 @@ async def async_setup_entry(
                     device_info=device,
                 )
             )
+
+    # Add plan toggle switches for Transfer Switch devices
+    for device in devices:
+        device_id = device["devId"]
+        coordinator = coordinators.get(device_id)
+        if coordinator is None or not has_plans(coordinator):
+            continue
+        for plan in _get_plans(coordinator):
+            pid = plan.get("pid")
+            if pid:
+                entities.append(
+                    JackeryPlanSwitch(
+                        api=api,
+                        coordinator=coordinator,
+                        device_info=device,
+                        pid=pid,
+                    )
+                )
 
     async_add_entities(entities)
 

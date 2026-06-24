@@ -63,8 +63,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for device in devices:
         device_id = device["devId"]
         device_name = device.get("devName", f"Jackery Device {device_id}")
+        device_sn = device.get("devSn", "")
+        is_transfer_switch = device.get("modelCode") == 2001
 
-        async def _async_update_data(api_client=api, dev_id=device_id):
+        # Persistent plan cache — survives across coordinator update cycles.
+        # Populated by MQTT query on a throttled schedule; injected into every
+        # coordinator update so plan entities always have data.
+        plan_cache: dict[str, list[dict]] = {"plans": []}
+        plan_poll_counter = [0]
+        PLAN_QUERY_EVERY_N = 5  # query plans every Nth poll (~5 min at 60s)
+
+        async def _async_update_data(
+            api_client=api,
+            dev_id=device_id,
+            dev_sn=device_sn,
+            is_box=is_transfer_switch,
+            _counter=plan_poll_counter,
+            _plan_cache=plan_cache,
+        ):
             """Fetch data from API endpoint."""
             try:
                 data = await asyncio.wait_for(
@@ -72,6 +88,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     timeout=10,
                 )
                 properties = dict(data.get("data", {}).get("properties", {}))
+                if is_box:
+                    _counter[0] += 1
+                    if _counter[0] >= PLAN_QUERY_EVERY_N:
+                        _counter[0] = 0
+                        try:
+                            plans = await api_client.async_query_transfer_switch_plans(dev_sn)
+                            # Only update cache if we got actual plan data
+                            if plans:
+                                _plan_cache["plans"] = plans
+                        except Exception:
+                            _LOGGER.debug(
+                                "Plan query failed for %s, keeping cached data",
+                                dev_sn,
+                            )
+                    # Always inject cached plans into properties
+                    properties["_plans"] = _plan_cache["plans"]
                 properties["last_updated"] = dt_util.now()
                 return properties
             except JackeryAuthenticationError as err:
@@ -80,6 +112,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 ) from err
             except Exception as err:
                 raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+        # Pre-seed plan cache before first coordinator refresh so plan
+        # entities are created on the initial setup pass.
+        if is_transfer_switch and device_sn:
+            try:
+                plans = await api.async_query_transfer_switch_plans(device_sn)
+                if plans:
+                    plan_cache["plans"] = plans
+                    _LOGGER.debug("Pre-loaded %d plans for %s", len(plans), device_sn)
+                else:
+                    _LOGGER.debug("Initial plan query returned empty for %s", device_sn)
+            except Exception:
+                _LOGGER.debug("Initial plan query failed for %s, will retry", device_sn)
 
         coordinator = DataUpdateCoordinator(
             hass,

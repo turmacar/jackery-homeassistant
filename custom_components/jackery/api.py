@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import logging
+import time
 import uuid
 from typing import Optional
 
@@ -17,10 +18,17 @@ from Cryptodome.PublicKey import RSA
 from Cryptodome.Util.Padding import pad
 
 try:
+    import aiomqtt
+except ModuleNotFoundError:
+    aiomqtt = None
+
+try:
     import socketry
+    from socketry.client import _mqtt_params as _socketry_mqtt_params
 except ModuleNotFoundError as err:  # pragma: no cover - dependency provided in prod
     if err.name == "socketry":
         socketry = None
+        _socketry_mqtt_params = None
     else:
         raise
 
@@ -311,7 +319,8 @@ class JackeryAPI:
         action_id: int,
         body: dict,
     ) -> None:
-        """Send a raw MQTT command using the Transfer Switch protocol."""
+        """Send a raw MQTT command using the Transfer Switch protocol.
+        """
         if socketry is None:
             raise RuntimeError("socketry is not installed")
 
@@ -322,14 +331,15 @@ class JackeryAPI:
                 try:
                     await client._publish_command(device_sn, action_id, body)
                     return
-                except (
-                    socketry.AuthenticationError,
-                    socketry.MqttError,
-                    socketry.SocketryError,
-                ):
+                except Exception:
                     if attempt == 1:
                         await self._async_reset_control_client(client)
                         raise
+                    _LOGGER.debug(
+                        "Transfer switch command failed (attempt %d), "
+                        "resetting control client and retrying",
+                        attempt + 1,
+                    )
                     await self._async_reset_control_client(client)
                     client = await self._async_get_control_client()
 
@@ -360,4 +370,80 @@ class JackeryAPI:
         raise KeyError(
             f"Unable to resolve Jackery device for control (device_id={device_id}, "
             f"device_sn={device_sn})."
+        )
+
+    async def async_query_transfer_switch_plans(
+        self,
+        device_sn: str,
+    ) -> list[dict]:
+        """Query charge/discharge plans from Transfer Switch via MQTT.
+
+        Opens a short-lived MQTT connection, sends a QueryElectricityStrategy
+        command, and waits for the response containing the ``cds`` plan list.
+        Socketry's subscribe loop filters out non-DevicePropertyChange messages,
+        so this method handles the MQTT exchange directly.
+        """
+        if socketry is None or aiomqtt is None:
+            raise RuntimeError("socketry/aiomqtt is not installed")
+
+        async with self._control_write_lock:
+            client = await self._async_get_control_client()
+            user_id = client.user_id
+            params = _socketry_mqtt_params(client._creds)
+
+        cmd_topic = f"hb/app/{user_id}/command"
+        dev_topic = f"hb/app/{user_id}/device"
+        ts = int(time.time() * 1000)
+        payload = json.dumps(
+            {
+                "deviceSn": device_sn,
+                "id": ts,
+                "version": 0,
+                "messageType": "QueryElectricityStrategy",
+                "actionId": 12,
+                "timestamp": ts,
+                "body": {"cmd": 15},
+            },
+            separators=(",", ":"),
+        )
+
+        try:
+            async with aiomqtt.Client(**params) as mqtt:
+                await mqtt.subscribe(dev_topic, qos=1)
+                await mqtt.publish(cmd_topic, payload, qos=1)
+                try:
+                    async with asyncio.timeout(10):
+                        async for message in mqtt.messages:
+                            try:
+                                data = json.loads(message.payload)
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                            if (
+                                data.get("deviceSn") == device_sn
+                                and isinstance(data.get("body"), dict)
+                                and "cds" in data["body"]
+                            ):
+                                return data["body"]["cds"]
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "Timeout waiting for plan query response from %s",
+                        device_sn,
+                    )
+        except Exception:
+            _LOGGER.exception("Failed to query plans for %s", device_sn)
+
+        return []
+
+    async def async_update_transfer_switch_plan(
+        self,
+        device_id: str,
+        device_sn: str,
+        plan: dict,
+    ) -> None:
+        """Update an existing charge/discharge plan on the Transfer Switch."""
+        await self.async_send_transfer_switch_command(
+            device_id,
+            device_sn,
+            14,  # actionId for UpdateElectricityStrategy
+            {"cmd": 17, **plan},
         )

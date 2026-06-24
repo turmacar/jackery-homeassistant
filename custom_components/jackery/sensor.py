@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import DOMAIN, SENSOR_DESCRIPTIONS, JackerySensorEntityDescription
 from .protocol import is_supported_property
+from .plan import JackeryPlanSensor, has_plans
 
 
 async def async_setup_entry(
@@ -40,6 +41,16 @@ async def async_setup_entry(
                 if is_supported_property(coordinator.data, description.key):
                     registered_keys.add(description.key)
                     entities.append(JackerySensor(coordinator, description, device))
+
+            # Add plan overview sensor if coordinator has plan data
+            if has_plans(coordinator):
+                entities.append(
+                    JackeryPlanSensor(
+                        api=entry_data["api"],
+                        coordinator=coordinator,
+                        device_info=device,
+                    )
+                )
 
     async_add_entities(entities)
 

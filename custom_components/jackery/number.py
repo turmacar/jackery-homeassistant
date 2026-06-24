@@ -21,7 +21,13 @@ from .api import JackeryAPI
 from .const import DOMAIN
 from .protocol import control_spec, supported_keys
 
-NUMBER_KEYS = ("ast", "pm", "sltb")
+NUMBER_KEYS = ("ast", "pm", "sltb", "ddt")
+
+# Transfer Switch commands: key -> (action_id, cmd)
+TRANSFER_SWITCH_NUMBER_COMMANDS: dict[str, tuple[int, int]] = {
+    "ddt": (19, 19),
+}
+
 NUMBER_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
         key=spec.key,
@@ -32,7 +38,12 @@ NUMBER_DESCRIPTIONS: dict[str, EntityDescription] = {
     for spec in (control_spec(key),)
 }
 NUMBER_RANGES: dict[str, tuple[float, float, float]] = {
-    key: (0, 1440, 1) for key in NUMBER_KEYS
+    key: (0, 1440, 1) for key in ("ast", "pm", "sltb")
+}
+NUMBER_RANGES["ddt"] = (1, 90, 1)
+
+NUMBER_UNITS: dict[str, str | None] = {
+    "ddt": "%",
 }
 
 
@@ -91,8 +102,9 @@ class JackeryNumberEntity(CoordinatorEntity, NumberEntity):
         self._attr_unique_id = f"{self._device_id}_{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
-        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
-        self._attr_mode = NumberMode.BOX
+        unit = NUMBER_UNITS.get(description.key)
+        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES if unit is None else unit
+        self._attr_mode = NumberMode.AUTO if description.key == "ddt" else NumberMode.BOX
         self._attr_native_min_value = min_value
         self._attr_native_max_value = max_value
         self._attr_native_step = step
@@ -120,14 +132,25 @@ class JackeryNumberEntity(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set a new numeric value."""
         int_value = self._normalize_value(value)
+        key = self.entity_description.key
 
         try:
-            await self._api.async_set_device_property(
-                self._device_id,
-                self._device_sn,
-                self._slug,
-                int_value,
-            )
+            box_cmd = TRANSFER_SWITCH_NUMBER_COMMANDS.get(key)
+            if box_cmd is not None:
+                action_id, cmd = box_cmd
+                await self._api.async_send_transfer_switch_command(
+                    self._device_id,
+                    self._device_sn,
+                    action_id,
+                    {"cmd": cmd, key: int_value},
+                )
+            else:
+                await self._api.async_set_device_property(
+                    self._device_id,
+                    self._device_sn,
+                    self._slug,
+                    int_value,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as err:
