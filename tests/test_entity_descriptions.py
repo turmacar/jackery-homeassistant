@@ -189,7 +189,11 @@ class EntityDescriptionTests(unittest.TestCase):
         self.assertEqual(sensors["cip"].device_class, "power")
         self.assertEqual(sensors["cip"].state_class, "measurement")
 
-        self.assertNotIn("acpsp", sensors)
+        self.assertEqual(sensors["acpsp"].name, "Solar Panel Input Power")
+        self.assertEqual(sensors["acpsp"].native_unit_of_measurement, "W")
+        self.assertEqual(sensors["acpsp"].device_class, "power")
+        self.assertEqual(sensors["acpsp"].state_class, "measurement")
+        self.assertAlmostEqual(sensors["acpsp"].value(4988), 498.8)
 
         self.assertEqual(sensors["acohz"].name, "AC Output Frequency")
         self.assertEqual(sensors["acohz"].native_unit_of_measurement, "Hz")
@@ -199,9 +203,6 @@ class EntityDescriptionTests(unittest.TestCase):
         self.assertEqual(sensors["ec"].name, "Error Code")
         self.assertEqual(sensors["ec"].entity_category, "diagnostic")
 
-        self.assertEqual(sensors["pmb"].name, "Parallel Modules Connected")
-        self.assertEqual(sensors["pmb"].entity_category, "diagnostic")
-
     def test_binary_sensor_descriptions_include_new_alarm_fields(self) -> None:
         """Alarm properties should be exposed as diagnostic problem sensors."""
         binary_sensors = {
@@ -210,6 +211,9 @@ class EntityDescriptionTests(unittest.TestCase):
         }
 
         self.assertNotIn("acpss", binary_sensors)
+
+        self.assertEqual(binary_sensors["pmb"].name, "Outlets Active")
+        self.assertEqual(binary_sensors["pmb"].entity_category, "diagnostic")
 
         self.assertEqual(binary_sensors["ta"].name, "Temperature Alarm")
         self.assertEqual(binary_sensors["ta"].device_class, "problem")

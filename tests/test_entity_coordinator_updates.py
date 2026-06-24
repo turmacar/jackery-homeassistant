@@ -538,7 +538,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [entity.entity_description.key for entity in added],
-            ["rb", "cip", "acohz", "ec", "bs", "pmb"],
+            ["rb", "cip", "acohz", "ec", "bs"],
         )
         coordinator.async_set_updated_data(
             {
@@ -552,7 +552,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [entity.entity_description.key for entity in added],
-            ["rb", "cip", "acohz", "ec", "bs", "pmb"],
+            ["rb", "cip", "acohz", "ec", "bs"],
         )
 
         added, coordinator = await collect_entities(binary_sensor, {"oac": 1})
