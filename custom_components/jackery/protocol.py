@@ -107,6 +107,28 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         icon="mdi:monitor-screenshot",
         read_keys=("sltb", "slt"),
     ),
+    "ddt": JackeryControlSpec(
+        key="ddt",
+        slug="ddt",
+        name="Backup Reserve",
+        platform="number",
+        icon="mdi:battery-lock",
+    ),
+    "en": JackeryControlSpec(
+        key="en",
+        slug="en",
+        name="Working Mode",
+        platform="select",
+        icon="mdi:transfer-switch",
+        options=("Automatic Charging", "Scheduled Tasks", "Self Consumption"),
+    ),
+    "ups": JackeryControlSpec(
+        key="ups",
+        slug="ups",
+        name="UPS Mode",
+        platform="switch",
+        icon="mdi:power-plug-battery",
+    ),
     "pss": JackeryControlSpec(
         key="pss",
         slug="pss",

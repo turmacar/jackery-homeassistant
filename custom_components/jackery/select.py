@@ -28,7 +28,11 @@ from .protocol import (
     supported_keys,
 )
 
-SELECT_KEYS = ("lm", "cs", "lps")
+# Transfer Switch commands for select-like properties (key -> (action_id, cmd))
+TRANSFER_SWITCH_SELECT_COMMANDS: dict[str, tuple[int, int]] = {
+    "en": (20, 20),
+}
+SELECT_KEYS = ("lm", "cs", "lps", "en")
 SELECT_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
         key=spec.key,
@@ -185,12 +189,23 @@ class JackerySelectEntity(CoordinatorEntity, SelectEntity):
             )
 
         try:
-            await self._api.async_set_device_property(
-                self._device_id,
-                self._device_sn,
-                self._slug,
-                option,
-            )
+            transfer_switch_cmd = TRANSFER_SWITCH_SELECT_COMMANDS.get(self.entity_description.key)
+            if transfer_switch_cmd is not None:
+                action_id, cmd = transfer_switch_cmd
+                int_value = self._attr_options.index(option)
+                await self._api.async_send_transfer_switch_command(
+                    self._device_id,
+                    self._device_sn,
+                    action_id,
+                    {"cmd": cmd, self.entity_description.key: int_value},
+                )
+            else:
+                await self._api.async_set_device_property(
+                    self._device_id,
+                    self._device_sn,
+                    self._slug,
+                    option,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as err:
