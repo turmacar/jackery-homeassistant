@@ -23,42 +23,55 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 
 ### Regular Sensors
 
-| Sensor                     | Description                                         | Unit     |
-| -------------------------- | --------------------------------------------------- | -------- |
-| Remaining Battery          | Current battery level                               | %        |
-| Backup Reserve             | Battery percentage reserved for power loss          | %        | 
-| Battery Temperature        | Battery temperature                                 | °C       |
-| Battery Status             | Idle, Charging, Discharging, or Fault               | text     |
-| Output Power               | Current power output                                | W        |
-| Total Input Power          | Current total power input                           | W        |
-| AC Input Power             | Current AC input power                              | W        |
-| DC Input Power             | Current DC/car input power                          | W        |
-| Solar Panel Input Power    | Current Solar Panel input power                     | W        |
-| Time to Full               | Estimated time to full charge                       | hours    |
-| Remaining Output Time      | Estimated remaining runtime                         | hours    |
-| AC Output Voltage          | Current AC output voltage                           | V        |
-| AC Outlet Output Voltage   | Current AC output voltage of AC outlets             | V        |
-| AC Output Frequency        | Current AC output frequency                         | Hz       |
-| Error Code                 | Reported device error code                          | integer  |
-| Battery Pack               | External Battery Packs connected                    | text     |
-| Batteries Indicated        | Number of External Battery Packs                    | integer  |
-| Power System State         | Power supplied by Grid or Station (batteries/solar) | text     |
-| UTC offset                 | Timezone offset in hours                            | integer  |
-| Last Updated               | Timestamp of last successful data refresh           | ISO 8601 |
+| Sensor                     | Description                                                           | Unit     |
+| -------------------------- | --------------------------------------------------------------------- | -------- |
+| Remaining Battery          | Current battery level                                                 | %        |
+| Backup Reserve             | Battery percentage reserved for power loss                            | %        | 
+| Battery Temperature        | Battery temperature                                                   | °C       |
+| Battery Status             | Idle, Charging, Discharging, or Fault                                 | text     |
+| Output Power               | Current power output                                                  | W        |
+| Total Input Power          | Current total power input                                             | W        |
+| AC Input Power             | Current AC input power                                                | W        |
+| DC Input Power             | Current DC/car input power                                            | W        |
+| Solar Panel Input Power    | Current Solar Panel input power                                       | W        |
+| Time to Full               | Estimated time to full charge                                         | hours    |
+| Remaining Output Time      | Estimated remaining runtime                                           | hours    |
+| AC Output Voltage          | Current AC output voltage                                             | V        |
+| AC Outlet Output Voltage   | Current AC output voltage of AC outlets                               | V        |
+| AC Output Frequency        | Current AC output frequency                                           | Hz       |
+| Error Code                 | Reported device error code                                            | integer  |
+| Battery Pack               | External Battery Packs connected                                      | text     |
+| Batteries Indicated        | Number of External Battery Packs                                      | integer  |
+| Power System State         | Power supplied by Grid or Station (batteries/solar)                   | text     |
+| UTC offset                 | Timezone offset in hours                                              | integer  |
+| Last Updated               | Timestamp of last successful data refresh                             | ISO 8601 |
+| Scheduled Plans            | Number of active scheduled plans (Transfer Switch)                    | integer  |
+| Mains Power Fault          | OK / Not Connected / Abnormality (Transfer Switch)                    | text     |
+| AC1 Error Code             | OK or error code (F1–FF) (Transfer Switch)                            | text     |
+| AC2 Error Code             | OK or error code (F1–FF) (Transfer Switch)                            | text     |
+| AC1 Temperature Alarm      | OK / High Temperature / Low Temperature (Transfer Switch)             | text     |
+| AC2 Temperature Alarm      | OK / High Temperature / Low Temperature (Transfer Switch)             | text     |
+| Module Overload            | OK / Mains Power Overload / Energy Storage Overload (Transfer Switch) | text     |
 
 ### Binary Sensors (ON/OFF)
 
-| Sensor                 | Description                              |
-| ---------------------- | ---------------------------------------- |
-| AC Output              | AC output status                         |
-| DC Output              | Combined DC output status                |
-| DC Car Output          | DC car port output status                |
-| USB Output             | USB output status                        |
-| Temperature Alarm      | Device temperature alarm status          |
-| Temperature Protection | Device temperature protection status     |
-| Power Alarm            | Device power/protection alarm            |
-| UPS Mode               | Device UPS Mode status                   |
-| Outlets Active         | Whether any device outlets are active    |
+| Sensor                  | Description                                |
+|-------------------------|--------------------------------------------|
+| AC Output               | AC output status                           |
+| DC Output               | Combined DC output status                  |
+| DC Car Output           | DC car port output status                  |
+| USB Output              | USB output status                          |
+| Temperature Alarm       | Device temperature alarm status            |
+| Temperature Protection  | Device temperature protection status       |
+| Power Alarm             | Device power/protection alarm              |
+| UPS Mode                | Device UPS mode status                     |
+| Outlets Active          | Whether any device outlets are active      |
+| Emergency Stop          | Emergency stop fault (Transfer Switch)     |
+| AC1 Communication Fault | AC1 communication fault (Transfer Switch)  |
+| AC2 Communication Fault | AC2 communication fault (Transfer Switch)  |
+| Cover Open              | Cover open fault (Transfer Switch)         |
+| Temperature Fault       | NTC temperature fault (Transfer Switch)    |
+| RTC Fault               | Real-time clock fault (Transfer Switch)    |
 
 **Note:** Different Jackery device models may report different combinations of DC output sensors. Some models use a combined `odc` parameter while others use separate `odcc` and `odcu` parameters. The integration hides the combined DC entity when split USB/car output keys are available.
 
@@ -68,42 +81,47 @@ The integration creates writable entities only when the corresponding properties
 
 ### Switches
 
-| Entity              | Description                              |
-| ------------------- | ---------------------------------------- |
-| AC Output           | Toggle AC output                         |
-| DC Output           | Toggle combined DC output                |
-| DC Car Output       | Toggle DC car output                     |
-| USB Output          | Toggle USB output                        |
-| Super Fast Charge   | Toggle super fast charge mode            |
-| Charging Plan       | Enable or disable charging plans         |
+| Entity            | Description                                                   |
+|-------------------|---------------------------------------------------------------|
+| AC Output         | Toggle AC output                                              |
+| DC Output         | Toggle combined DC output                                     |
+| DC Car Output     | Toggle DC car output                                          |
+| USB Output        | Toggle USB output                                             |
+| Super Fast Charge | Toggle super fast charge mode                                 |
+| UPS Mode          | Toggle UPS mode                                               |
+| Charging Plan     | Enable or disable charging plans                              |
+| Grid / Station    | Toggle between grid power and station power (Transfer Switch) |
+| Plan *{name}*     | Toggle individual scheduled plans (Transfer Switch)           |
 
 ### Selects
 
-| Entity                | Options                        |
-| --------------------- | ------------------------------ |
-| Light Mode            | `off`, `low`, `high`, `sos`    |
-| Charge Speed          | `fast`, `mute`                 |
-| Battery Protection    | `full`, `eco`                  |
-| Charging Plan Repeat  | `Everyday`, `Weekdays`, `Weekends`, `Once` |
+| Entity               | Options                                        |
+|----------------------|------------------------------------------------|
+| Light Mode           | `off`, `low`, `high`, `sos`                    |
+| Charge Speed         | `fast`, `mute`                                 |
+| Battery Protection   | `full`, `eco`                                  |
+| Charging Plan Repeat | `Everyday`, `Weekdays`, `Weekends`, `Once`     |
 
 ### Numbers
 
-| Entity           | Description                     | Unit    |
-| ---------------- | ------------------------------- | ------- |
-| Auto Shutdown    | Auto shutdown delay             | minutes |
-| Energy Saving    | Energy saving timer             | minutes |
-| Screen Timeout   | Screen timeout delay            | minutes |
+| Entity         | Description           | Unit    |
+|----------------|-----------------------|---------|
+| Auto Shutdown  | Auto shutdown delay   | minutes |
+| Energy Saving  | Energy saving timer   | minutes |
+| Screen Timeout | Screen timeout delay  | minutes |
 
 ### Text
 
-| Entity              | Description                                  | Format         |
-| ------------------- | -------------------------------------------- | -------------- |
-| Charging Plan Time  | Charging plan time window for supported devices | `HH:mm-HH:mm` |
+| Entity             | Description                                         | Format         |
+|--------------------|-----------------------------------------------------|----------------|
+| Charging Plan Time | Charging plan time window for supported devices     | `HH:mm-HH:mm`  |
 
 ## Device-Specific Availability
 
 - Entities are created only when the Jackery API reports the underlying key for that device.
-- Charging plans are not available for devices connected to a Smart Transfer Switch
+- Charging plans are not available for devices connected to a Smart Transfer Switch.
+- Scheduled plan entities (plan sensor and per-plan toggle switches) appear only for the Smart Transfer Switch.
+- Fault diagnostic entities are created when the device reports an `fz` sub-object. Multi-state faults show human-readable labels; binary faults show Problem/OK.
 - `Charging Plan` appears when the device reports DP `107`.
 - `Charging Plan Time` and `Charging Plan Repeat` appear when the device reports DP `108`.
 - Devices that split DC control into `odcu` and `odcc` will not show the combined `DC Output` entity.
