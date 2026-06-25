@@ -104,6 +104,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             )
                     # Always inject cached plans into properties
                     properties["_plans"] = _plan_cache["plans"]
+                # Flatten nested fault dict so sensors can access
+                # individual fault fields as top-level keys (fz_gs, fz_ol, etc.)
+                fz = properties.get("fz")
+                if isinstance(fz, dict):
+                    for fk, fv in fz.items():
+                        properties[f"fz_{fk}"] = fv
+
                 properties["last_updated"] = dt_util.now()
                 return properties
             except JackeryAuthenticationError as err:

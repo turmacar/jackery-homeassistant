@@ -64,6 +64,39 @@ def _grid_status_value(value: object) -> str:
 
     return GRID_STATUS_LABELS.get(status, str(value))
 
+MAINS_FAULT_LABELS: dict[int, str] = {
+    0: "OK",
+    1: "Not Connected",
+    2: "Abnormality",
+}
+
+TEMP_ALARM_LABELS: dict[int, str] = {
+    0: "OK",
+    1: "High Temperature",
+    2: "Low Temperature",
+}
+
+MODULE_OVERLOAD_LABELS: dict[int, str] = {
+    0: "OK",
+    1: "Mains Power Overload",
+    2: "Energy Storage Overload",
+}
+
+# Error code labels: F1-FF map to values 1-13
+_EC_CODES = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "FA", "FC", "FE", "FF"]
+ERROR_CODE_LABELS: dict[int, str] = {0: "OK"}
+ERROR_CODE_LABELS.update({i + 1: code for i, code in enumerate(_EC_CODES)})
+
+def _fault_label(labels: dict[int, str]) -> Callable[[object], str]:
+    """Return a value mapper for a fault field with known labels."""
+    def _map(value: object) -> str:
+        try:
+            code = int(value)
+        except (TypeError, ValueError):
+            return str(value)
+        return labels.get(code, str(value))
+    return _map
+
 @dataclass
 class JackerySensorEntityDescription(SensorEntityDescription):
     """Describes a Jackery sensor entity."""
@@ -216,6 +249,49 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock",
     ),
+    # Fault sub-object fields with multiple states
+    JackerySensorEntityDescription(
+        key="fz_gs",
+        name="Mains Power Fault",
+        icon="mdi:transmission-tower",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(MAINS_FAULT_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="fz_ec1",
+        name="AC1 Error Code",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(ERROR_CODE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="fz_ec2",
+        name="AC2 Error Code",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(ERROR_CODE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="fz_ta1",
+        name="AC1 Temperature Alarm",
+        icon="mdi:thermometer-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(TEMP_ALARM_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="fz_ta2",
+        name="AC2 Temperature Alarm",
+        icon="mdi:thermometer-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(TEMP_ALARM_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="fz_moc",
+        name="Module Overload",
+        icon="mdi:flash-alert-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(MODULE_OVERLOAD_LABELS),
+    ),
 )
 
 # Binary sensor descriptions
@@ -281,6 +357,50 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
         name="Outlets Active",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:power-plug",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Fault sub-object fields
+    # Multi-state faults (gs, ec1, ec2, ta1, ta2, moc) are in SENSOR_DESCRIPTIONS.
+    BinarySensorEntityDescription(
+        key="fz_es",
+        name="Emergency Stop",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:alert-octagon",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="fz_bs1",
+        name="AC1 Communication Fault",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:battery-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="fz_bs2",
+        name="AC2 Communication Fault",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:battery-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="fz_ol",
+        name="Cover Open",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:door-open",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="fz_ntc",
+        name="Temperature Fault",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:thermometer-alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="fz_rtc",
+        name="RTC Fault",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        icon="mdi:clock-alert-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
