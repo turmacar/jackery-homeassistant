@@ -149,5 +149,18 @@ class JackerySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict | None:
+        attrs: dict[str, object] = {}
         text = ENTITY_HELP_TEXT.get(self.entity_description.key)
-        return {"description": text} if text else None
+        if text:
+            attrs["description"] = text
+        # For battery pack count sensors, expose each pack's SN and level
+        key = self.entity_description.key
+        if key.endswith("_bp_count"):
+            slot = key.rsplit("_bp_count", 1)[0]  # "ac1" or "ac2"
+            bp_list = self.coordinator.data.get(f"{slot}_bp")
+            if isinstance(bp_list, list):
+                for i, pack in enumerate(bp_list):
+                    prefix = f"pack_{i + 1}"
+                    attrs[f"{prefix}_sn"] = pack.get("sn", "")
+                    attrs[f"{prefix}_battery"] = pack.get("rb")
+        return attrs or None

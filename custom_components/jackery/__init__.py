@@ -131,6 +131,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     for fk, fv in fz.items():
                         properties[f"fz_{fk}"] = fv
 
+                # Flatten nested battery slot dicts (ac1, ac2) so sensors
+                # can access them as ac1_rb, ac1_op, ac2_rb, etc.
+                for slot in ("ac1", "ac2"):
+                    ac = properties.get(slot)
+                    if isinstance(ac, dict):
+                        for ak, av in ac.items():
+                            if not isinstance(av, (dict, list)):
+                                properties[f"{slot}_{ak}"] = av
+                        # Battery pack list: store count and raw list
+                        bp = ac.get("bp")
+                        if isinstance(bp, list):
+                            properties[f"{slot}_bp_count"] = len(bp)
+                            properties[f"{slot}_bp"] = bp
+
                 properties["last_updated"] = dt_util.now()
                 return properties
             except JackeryAuthenticationError as err:

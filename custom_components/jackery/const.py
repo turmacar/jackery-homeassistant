@@ -66,11 +66,28 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "fz_moc": "Module overload.",
     # Fault binary sensors (Transfer Switch)
     "fz_es": "Emergency stop button has been triggered.",
-    "fz_bs1": "Communication lost with AC1 battery slot.",
-    "fz_bs2": "Communication lost with AC2 battery slot.",
+    "fz_bs1": "Communication lost with AC1.",
+    "fz_bs2": "Communication lost with AC2.",
     "fz_ol": "Transfer Switch cover is open.",
     "fz_ntc": "NTC temperature sensor reading is abnormal.",
     "fz_rtc": "Real-time clock module fault.",
+    # Battery slot sensors (Transfer Switch)
+    "ac1_rb": "Battery level of the device connected to AC1.",
+    "ac1_op": "Output power from the device connected to AC1.",
+    "ac1_ip": "Input power to the device connected to AC1.",
+    "ac1_ot": "Estimated remaining runtime for the device connected to AC1.",
+    "ac1_it": "Estimated time until fully charged for the device connected to AC1.",
+    "ac1_bs": "Battery state of the device connected to AC1.",
+    "ac1_bi": "Whether a battery device is connected to AC1.",
+    "ac1_bp_count": "Number of add-on battery packs connected to the AC1 device.",
+    "ac2_rb": "Battery level of the device connected to AC2.",
+    "ac2_op": "Output power from the device connected to AC2.",
+    "ac2_ip": "Input power to the device connected to AC2.",
+    "ac2_ot": "Estimated remaining runtime for the device connected to AC2.",
+    "ac2_it": "Estimated time until fully charged for the device connected to AC2.",
+    "ac2_bs": "Battery state of the device connected to AC2.",
+    "ac2_bi": "Whether a battery device is connected to AC2.",
+    "ac2_bp_count": "Number of add-on battery packs connected to the AC2 device.",
     # Binary sensors
     "oac": "Whether the AC outlet is currently outputting power.",
     "odc": "Whether the combined DC output (USB + car) is active.",
@@ -123,6 +140,13 @@ def _grid_status_value(value: object) -> str:
         return str(value)
 
     return GRID_STATUS_LABELS.get(status, str(value))
+
+def _connected_value(value: object) -> str:
+    """Return Yes/No for connection status."""
+    try:
+        return "Yes" if int(value) else "No"
+    except (TypeError, ValueError):
+        return str(value)
 
 MAINS_FAULT_LABELS: dict[int, str] = {
     0: "OK",
@@ -308,6 +332,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         name="Last Updated",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock",
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     # Fault sub-object fields with multiple states
     JackerySensorEntityDescription(
@@ -351,6 +376,133 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         icon="mdi:flash-alert-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         value=_fault_label(MODULE_OVERLOAD_LABELS),
+    ),
+    # Battery slot sensors (Transfer Switch ac1/ac2 flattened)
+    JackerySensorEntityDescription(
+        key="ac1_rb",
+        name="AC1 Battery Level",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_op",
+        name="AC1 Output Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_ip",
+        name="AC1 Input Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_ot",
+        name="AC1 Remaining Time",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_it",
+        name="AC1 Time to Full",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_bs",
+        name="AC1 Battery Status",
+        icon="mdi:battery-heart-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_battery_status_value,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_bi",
+        name="AC1 Connected",
+        icon="mdi:battery-multiple",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_connected_value,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_rb",
+        name="AC2 Battery Level",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_op",
+        name="AC2 Output Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_ip",
+        name="AC2 Input Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_ot",
+        name="AC2 Remaining Time",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_it",
+        name="AC2 Time to Full",
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_bs",
+        name="AC2 Battery Status",
+        icon="mdi:battery-heart-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_battery_status_value,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_bi",
+        name="AC2 Connected",
+        icon="mdi:battery-multiple",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_connected_value,
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_bp_count",
+        name="AC1 Battery Packs",
+        icon="mdi:battery-plus-variant",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_bp_count",
+        name="AC2 Battery Packs",
+        icon="mdi:battery-plus-variant",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
 
@@ -411,6 +563,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
         name="UPS Mode",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:power-plug-battery",
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     BinarySensorEntityDescription(
         key="pmb",
