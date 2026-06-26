@@ -136,6 +136,13 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="switch",
         icon="mdi:transmission-tower",
     ),
+    "rc": JackeryControlSpec(
+        key="rc",
+        slug="rc",
+        name="Force Charge",
+        platform="switch",
+        icon="mdi:battery-charging-100",
+    ),
 }
 
 CHARGING_PLAN_SWITCH_DP = "107"

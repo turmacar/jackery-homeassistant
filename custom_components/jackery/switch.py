@@ -24,12 +24,17 @@ from .protocol import (
 )
 from .plan import JackeryPlanSwitch, _get_plans, has_plans
 
-SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss", "ups")
+SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss", "ups", "rc")
 
 # Transfer Switch commands: key -> (action_id, cmd)
 TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
     "pss": (4, 4),
     "ups": (6, 6),
+    "rc": (3, 5),
+}
+
+SWITCH_DESCRIPTIONS_EXTRA: dict[str, str] = {
+    "rc": "Forces the battery to charge from grid power regardless of mode or schedule.",
 }
 SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
@@ -187,6 +192,13 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
         if value is None:
             return None
         return value == 1
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        desc = SWITCH_DESCRIPTIONS_EXTRA.get(self.entity_description.key)
+        if desc:
+            return {"description": desc}
+        return None
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the device setting on."""
