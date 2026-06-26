@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import (
 from .const import DOMAIN, SENSOR_DESCRIPTIONS, JackerySensorEntityDescription, ENTITY_HELP_TEXT
 from .protocol import is_supported_property
 from .plan import JackeryPlanSensor, JackeryActivePlanSensor, has_plans
+from .circuit import JackeryCircuitPowerSensor, has_circuits, _get_circuits, get_logical_circuits
 
 
 async def async_setup_entry(
@@ -57,6 +58,17 @@ async def async_setup_entry(
                         device_info=device,
                     )
                 )
+
+            # Add circuit power sensors if coordinator has circuit data
+            if has_circuits(coordinator):
+                for logical in get_logical_circuits(_get_circuits(coordinator)):
+                    entities.append(
+                        JackeryCircuitPowerSensor(
+                            coordinator=coordinator,
+                            device_info=device,
+                            logical=logical,
+                        )
+                    )
 
     async_add_entities(entities)
 

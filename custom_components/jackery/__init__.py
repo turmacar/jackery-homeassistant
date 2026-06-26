@@ -70,8 +70,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Populated by MQTT query on a throttled schedule; injected into every
         # coordinator update so plan entities always have data.
         plan_cache: dict[str, list[dict]] = {"plans": []}
+        circuit_cache: dict[str, list[dict]] = {"circuits": []}
         plan_poll_counter = [0]
+        circuit_poll_counter = [0]
         PLAN_QUERY_EVERY_N = 5  # query plans every Nth poll (~5 min at 60s)
+        CIRCUIT_QUERY_EVERY_N = 3  # query circuits every Nth poll (~3 min)
 
         async def _async_update_data(
             api_client=api,
@@ -79,7 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             dev_sn=device_sn,
             is_box=is_transfer_switch,
             _counter=plan_poll_counter,
+            _cir_counter=circuit_poll_counter,
             _plan_cache=plan_cache,
+            _circuit_cache=circuit_cache,
         ):
             """Fetch data from API endpoint."""
             try:
@@ -104,6 +109,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             )
                     # Always inject cached plans into properties
                     properties["_plans"] = _plan_cache["plans"]
+
+                    _cir_counter[0] += 1
+                    if _cir_counter[0] >= CIRCUIT_QUERY_EVERY_N:
+                        _cir_counter[0] = 0
+                        try:
+                            circuits = await api_client.async_query_transfer_switch_circuits(dev_sn)
+                            if circuits:
+                                _circuit_cache["circuits"] = circuits
+                        except Exception:
+                            _LOGGER.debug(
+                                "Circuit query failed for %s, keeping cached data",
+                                dev_sn,
+                            )
+                    # Always inject cached circuits into properties
+                    properties["_circuits"] = _circuit_cache["circuits"]
                 # Flatten nested fault dict so sensors can access
                 # individual fault fields as top-level keys (fz_gs, fz_ol, etc.)
                 fz = properties.get("fz")
@@ -120,8 +140,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except Exception as err:
                 raise UpdateFailed(f"Error communicating with API: {err}") from err
 
-        # Pre-seed plan cache before first coordinator refresh so plan
-        # entities are created on the initial setup pass.
+        # Pre-seed plan and circuit caches before first coordinator refresh
+        # so entities are created on the initial setup pass.
         if is_transfer_switch and device_sn:
             try:
                 plans = await api.async_query_transfer_switch_plans(device_sn)
@@ -132,6 +152,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     _LOGGER.debug("Initial plan query returned empty for %s", device_sn)
             except Exception:
                 _LOGGER.debug("Initial plan query failed for %s, will retry", device_sn)
+            try:
+                circuits = await api.async_query_transfer_switch_circuits(device_sn)
+                if circuits:
+                    circuit_cache["circuits"] = circuits
+                    _LOGGER.debug("Pre-loaded %d circuits for %s", len(circuits), device_sn)
+                else:
+                    _LOGGER.debug("Initial circuit query returned empty for %s", device_sn)
+            except Exception:
+                _LOGGER.debug("Initial circuit query failed for %s, will retry", device_sn)
 
         coordinator = DataUpdateCoordinator(
             hass,

@@ -23,6 +23,7 @@ from .protocol import (
     supported_keys,
 )
 from .plan import JackeryPlanSwitch, _get_plans, has_plans
+from .circuit import JackeryCircuitSwitch, has_circuits, _get_circuits, get_logical_circuits
 
 SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss", "ups", "rc")
 
@@ -104,6 +105,22 @@ async def async_setup_entry(
                         pid=pid,
                     )
                 )
+
+    # Add circuit switches for Transfer Switch devices
+    for device in devices:
+        device_id = device["devId"]
+        coordinator = coordinators.get(device_id)
+        if coordinator is None or not has_circuits(coordinator):
+            continue
+        for logical in get_logical_circuits(_get_circuits(coordinator)):
+            entities.append(
+                JackeryCircuitSwitch(
+                    api=api,
+                    coordinator=coordinator,
+                    device_info=device,
+                    logical=logical,
+                )
+            )
 
     async_add_entities(entities)
 

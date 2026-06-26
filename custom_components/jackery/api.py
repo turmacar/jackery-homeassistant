@@ -447,3 +447,78 @@ class JackeryAPI:
             14,  # actionId for UpdateElectricityStrategy
             {"cmd": 17, **plan},
         )
+
+    async def async_query_transfer_switch_circuits(
+        self,
+        device_sn: str,
+    ) -> list[dict]:
+        """Query circuit properties from Transfer Switch via MQTT.
+
+        Opens a short-lived MQTT connection, sends a QueryCircuitProperty
+        command, and waits for the response containing the ``cir`` list.
+        """
+        if socketry is None or aiomqtt is None:
+            raise RuntimeError("socketry/aiomqtt is not installed")
+
+        async with self._control_write_lock:
+            client = await self._async_get_control_client()
+            user_id = client.user_id
+            params = _socketry_mqtt_params(client._creds)
+
+        cmd_topic = f"hb/app/{user_id}/command"
+        dev_topic = f"hb/app/{user_id}/device"
+        ts = int(time.time() * 1000)
+        payload = json.dumps(
+            {
+                "deviceSn": device_sn,
+                "id": ts,
+                "version": 0,
+                "messageType": "QueryCircuitProperty",
+                "actionId": 7,
+                "timestamp": ts,
+                "body": {"cmd": 10},
+            },
+            separators=(",", ":"),
+        )
+
+        try:
+            async with aiomqtt.Client(**params) as mqtt:
+                await mqtt.subscribe(dev_topic, qos=1)
+                await mqtt.publish(cmd_topic, payload, qos=1)
+                try:
+                    async with asyncio.timeout(10):
+                        async for message in mqtt.messages:
+                            try:
+                                data = json.loads(message.payload)
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                            if (
+                                data.get("deviceSn") == device_sn
+                                and isinstance(data.get("body"), dict)
+                                and "cir" in data["body"]
+                            ):
+                                return data["body"]["cir"]
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "Timeout waiting for circuit query response from %s",
+                        device_sn,
+                    )
+        except Exception:
+            _LOGGER.exception("Failed to query circuits for %s", device_sn)
+
+        return []
+
+    async def async_set_circuit_switch(
+        self,
+        device_id: str,
+        device_sn: str,
+        idx: int,
+        on: bool,
+    ) -> None:
+        """Toggle a circuit on/off on the Transfer Switch."""
+        await self.async_send_transfer_switch_command(
+            device_id,
+            device_sn,
+            9,  # actionId for circuit switch
+            {"cmd": 12, "idx": idx, "sw": 1 if on else 0},
+        )
