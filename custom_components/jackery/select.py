@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .api import JackeryAPI
-from .const import CHARGING_PLAN_DATA, DOMAIN
+from .const import CHARGING_PLAN_DATA, DOMAIN, ENTITY_HELP_TEXT
 from .protocol import (
     CHARGING_PLAN_REPEAT_TO_MASK,
     charging_plan_repeat_mask,
@@ -180,6 +180,11 @@ class JackerySelectEntity(CoordinatorEntity, SelectEntity):
             return self._options[int(value)]
         except (IndexError, TypeError, ValueError):
             return None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        text = ENTITY_HELP_TEXT.get(self.entity_description.key)
+        return {"description": text} if text else None
 
     async def async_select_option(self, option: str) -> None:
         """Select an option."""

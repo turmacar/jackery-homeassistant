@@ -34,6 +34,66 @@ POLLING_INTERVAL_SEC = 60
 CHARGING_PLAN_SWITCH = "107"
 CHARGING_PLAN_DATA = "108"
 
+# Short descriptions shown as a 'description' attribute on each entity.
+ENTITY_HELP_TEXT: dict[str, str] = {
+    # Sensors
+    "rb": "Current battery charge level across all connected packs.",
+    "ddt": "Minimum battery % reserved for backup during power outages.",
+    "bt": "Internal battery temperature.",
+    "op": "Total power currently being drawn from the device.",
+    "ip": "Total power input from all sources (AC, DC, solar).",
+    "acip": "Power input from the AC wall connection.",
+    "cip": "Power input from the DC/car port.",
+    "acpsp": "Power input from connected solar panels.",
+    "it": "Estimated time until battery is fully charged.",
+    "ot": "Estimated remaining runtime at current draw.",
+    "acov": "Voltage on the AC output bus.",
+    "acov1": "Voltage measured at the AC outlet terminals.",
+    "acohz": "Frequency of the AC output waveform.",
+    "ec": "Device error code.",
+    "bs": "Battery state: Idle, Charging, Discharging, or Fault.",
+    "bp": "Connected external battery pack data.",
+    "bi": "Number of external battery packs detected.",
+    "uo": "Device timezone offset from UTC (converted to hours).",
+    "pss": "Whether power is supplied by grid or station (batteries/solar).",
+    "last_updated": "Timestamp of the last successful data poll from Jackery API.",
+    # Fault sensors (Transfer Switch)
+    "fz_gs": "Mains power connection status.",
+    "fz_ec1": "AC1 energy storage error code.",
+    "fz_ec2": "AC2 energy storage error code.",
+    "fz_ta1": "AC1 temperature alarm.",
+    "fz_ta2": "AC2 temperature alarm.",
+    "fz_moc": "Module overload.",
+    # Fault binary sensors (Transfer Switch)
+    "fz_es": "Emergency stop button has been triggered.",
+    "fz_bs1": "Communication lost with AC1 battery slot.",
+    "fz_bs2": "Communication lost with AC2 battery slot.",
+    "fz_ol": "Transfer Switch cover is open.",
+    "fz_ntc": "NTC temperature sensor reading is abnormal.",
+    "fz_rtc": "Real-time clock module fault.",
+    # Binary sensors
+    "oac": "Whether the AC outlet is currently outputting power.",
+    "odc": "Whether the combined DC output (USB + car) is active.",
+    "odcc": "Whether the DC car port is outputting power.",
+    "odcu": "Whether the USB ports are outputting power.",
+    "ta": "Device temperature has exceeded a warning threshold.",
+    "tp": "Device has entered temperature protection mode and reduced output.",
+    "pal": "Device power or protection alarm is active.",
+    "ups": "UPS mode, provides ~20ms switchover from grid to battery on outage.",
+    "pmb": "At least one output port is active.",
+    # Switches
+    "rc": "Forces the battery to charge from grid power regardless of mode or schedule.",
+    # Selects
+    "en": "Automatic Charging keeps batteries full for power outages. Scheduled Tasks follows plans. Self Consumption prioritizes battery/solar.",
+    "lm": "Controls the built-in LED light mode.",
+    "cs": "Fast charges at full speed. Mute reduces fan noise at slower charge rate.",
+    "lps": "Full uses 100% capacity. Eco limits to ~85% to extend battery lifespan.",
+    # Numbers
+    "ast": "Minutes of inactivity before the device powers off automatically.",
+    "pm": "Minutes before the device enters energy saving (reduced standby draw).",
+    "sltb": "Minutes before the screen turns off.",
+}
+
 BATTERY_STATUS_LABELS: dict[int, str] = {
     0: "Idle",
     1: "Charging",

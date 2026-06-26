@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN, SENSOR_DESCRIPTIONS, JackerySensorEntityDescription
+from .const import DOMAIN, SENSOR_DESCRIPTIONS, JackerySensorEntityDescription, ENTITY_HELP_TEXT
 from .protocol import is_supported_property
 from .plan import JackeryPlanSensor, JackeryActivePlanSensor, has_plans
 
@@ -134,3 +134,8 @@ class JackerySensor(CoordinatorEntity, SensorEntity):
         if self.entity_description.value:
             return self.entity_description.value(value)
         return value
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        text = ENTITY_HELP_TEXT.get(self.entity_description.key)
+        return {"description": text} if text else None

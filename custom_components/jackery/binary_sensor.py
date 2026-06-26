@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN, BINARY_SENSOR_DESCRIPTIONS
+from .const import DOMAIN, BINARY_SENSOR_DESCRIPTIONS, ENTITY_HELP_TEXT
 from .protocol import is_supported_property
 
 
@@ -124,3 +124,8 @@ class JackeryBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if value is None:
             return None
         return value == 1
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        text = ENTITY_HELP_TEXT.get(self.entity_description.key)
+        return {"description": text} if text else None

@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .api import JackeryAPI
-from .const import DOMAIN
+from .const import DOMAIN, ENTITY_HELP_TEXT
 from .protocol import control_spec, supported_keys
 
 NUMBER_KEYS = ("ast", "pm", "sltb", "ddt")
@@ -128,6 +128,11 @@ class JackeryNumberEntity(CoordinatorEntity, NumberEntity):
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        text = ENTITY_HELP_TEXT.get(self.entity_description.key)
+        return {"description": text} if text else None
 
     async def async_set_native_value(self, value: float) -> None:
         """Set a new numeric value."""

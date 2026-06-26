@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .api import JackeryAPI
-from .const import CHARGING_PLAN_SWITCH, DOMAIN
+from .const import CHARGING_PLAN_SWITCH, DOMAIN, ENTITY_HELP_TEXT
 from .protocol import (
     control_spec,
     has_charging_plan_switch_support,
@@ -33,9 +33,6 @@ TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
     "rc": (3, 5),
 }
 
-SWITCH_DESCRIPTIONS_EXTRA: dict[str, str] = {
-    "rc": "Forces the battery to charge from grid power regardless of mode or schedule.",
-}
 SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
     key: EntityDescription(
         key=spec.key,
@@ -195,10 +192,8 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        desc = SWITCH_DESCRIPTIONS_EXTRA.get(self.entity_description.key)
-        if desc:
-            return {"description": desc}
-        return None
+        text = ENTITY_HELP_TEXT.get(self.entity_description.key)
+        return {"description": text} if text else None
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the device setting on."""
