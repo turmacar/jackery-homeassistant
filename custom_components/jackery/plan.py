@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, time as dt_time
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
@@ -62,6 +63,27 @@ def _find_plan(coordinator: DataUpdateCoordinator, pid: str) -> dict | None:
     """Find a specific plan by pid in coordinator data."""
     for plan in _get_plans(coordinator):
         if plan.get("pid") == pid:
+            return plan
+    return None
+
+
+def _active_plan(plans: list[dict]) -> dict | None:
+    """Return the plan currently executing based on day and time, or None."""
+    now = datetime.now()
+    day_index = now.weekday()
+    current_time = now.time()
+    for plan in plans:
+        if plan.get("sw") != 1:
+            continue
+        mask = plan.get("lps", "0000000")
+        if len(mask) != 7 or mask[day_index] != "1":
+            continue
+        try:
+            st = dt_time.fromisoformat(plan["st"])
+            et = dt_time.fromisoformat(plan["et"])
+        except (KeyError, ValueError):
+            continue
+        if st <= current_time <= et:
             return plan
     return None
 
@@ -129,6 +151,34 @@ class JackeryPlanSensor(CoordinatorEntity, SensorEntity):
             attrs[f"{prefix}_pid"] = plan.get("pid", "")
         attrs["plan_count"] = len(plans)
         return attrs
+
+
+class JackeryActivePlanSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing the currently executing plan, if any."""
+
+    def __init__(self, coordinator: DataUpdateCoordinator, device_info: dict) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{device_info['devId']}_active_plan"
+        self._attr_name = "Active Plan"
+        self._attr_icon = "mdi:calendar-check"
+        self._attr_device_info = _device_info(device_info)
+
+    @property
+    def native_value(self) -> str:
+        plan = _active_plan(_get_plans(self.coordinator))
+        return _plan_display_name(plan) if plan else "Idle"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        plan = _active_plan(_get_plans(self.coordinator))
+        if not plan:
+            return {"active": False}
+        return {
+            "active": True,
+            "type": "Charge" if plan.get("tt") == 1 else "Discharge",
+            "start_time": plan.get("st", ""),
+            "end_time": plan.get("et", ""),
+        }
 
 
 class JackeryPlanSwitch(CoordinatorEntity, SwitchEntity):
