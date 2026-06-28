@@ -138,8 +138,10 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     const_mod.CONF_USERNAME = "username"
     const_mod.Platform = Platform
     core_mod.HomeAssistant = HomeAssistant
+    core_mod.ServiceCall = type("ServiceCall", (), {})
     exceptions_mod.ConfigEntryAuthFailed = ConfigEntryAuthFailed
     exceptions_mod.ConfigEntryNotReady = ConfigEntryNotReady
+    exceptions_mod.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
     update_coordinator_mod.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator_mod.UpdateFailed = UpdateFailed
     dt_mod.now = lambda: "2026-04-18T19:00:00+01:00"
@@ -242,6 +244,10 @@ class AsyncSetupEntryTests(unittest.IsolatedAsyncioTestCase):
             config_entries=types.SimpleNamespace(
                 async_forward_entry_setups=AsyncMock(),
                 async_unload_platforms=AsyncMock(return_value=True),
+            ),
+            services=types.SimpleNamespace(
+                has_service=lambda *a: False,
+                async_register=lambda *a, **kw: None,
             ),
         )
 

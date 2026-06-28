@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -194,7 +195,133 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register plan services (idempotent — only registers once per domain)
+    if not hass.services.has_service(DOMAIN, "create_plan"):
+        _register_plan_services(hass)
+
     return True
+
+
+def _find_transfer_switch(hass: HomeAssistant) -> tuple[JackeryAPI, str, str] | None:
+    """Find the first Transfer Switch device across all config entries."""
+    for entry_data in hass.data.get(DOMAIN, {}).values():
+        if not isinstance(entry_data, dict):
+            continue
+        api = entry_data.get("api")
+        for device in entry_data.get("devices", []):
+            if device.get("modelCode") == 2001:
+                return api, device["devId"], device["devSn"]
+    return None
+
+
+def _register_plan_services(hass: HomeAssistant) -> None:
+    """Register jackery.create_plan, jackery.update_plan, jackery.delete_plan."""
+    _LOGGER.info("Registering plan CRUD services")
+
+    async def _refresh_plans_now(api: JackeryAPI, dev_sn: str) -> None:
+        """Query fresh plans from device and push into coordinator data."""
+        # Give the device time to finish processing the CRUD command
+        await asyncio.sleep(2)
+        try:
+            plans = await api.async_query_transfer_switch_plans(dev_sn)
+        except Exception:
+            _LOGGER.debug("Post-CRUD plan refresh failed for %s", dev_sn)
+            plans = None
+        if not plans:
+            _LOGGER.debug("Post-CRUD plan query returned empty for %s, keeping cached data", dev_sn)
+            return
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            if not isinstance(entry_data, dict):
+                continue
+            for coordinator in entry_data.get("coordinators", {}).values():
+                if coordinator.data and coordinator.data.get("_plans") is not None:
+                    new_data = dict(coordinator.data)
+                    new_data["_plans"] = plans
+                    coordinator.async_set_updated_data(new_data)
+
+    async def _handle_create_plan(call: ServiceCall) -> None:
+        _LOGGER.info("create_plan service called with: %s", call.data)
+        result = _find_transfer_switch(hass)
+        if result is None:
+            raise HomeAssistantError("No Transfer Switch found")
+        api, dev_id, dev_sn = result
+
+        plan = {
+            "pid": str(int(time.time())),
+            "tt": int(call.data["type"]),
+            "st": call.data["start_time"],
+            "et": call.data["end_time"],
+            "sw": 1 if call.data.get("enabled", True) else 0,
+            "lps": call.data["days"],
+        }
+        await api.async_create_transfer_switch_plan(dev_id, dev_sn, plan)
+        await _refresh_plans_now(api, dev_sn)
+
+    async def _handle_update_plan(call: ServiceCall) -> None:
+        _LOGGER.info("update_plan service called with: %s", call.data)
+        result = _find_transfer_switch(hass)
+        if result is None:
+            raise HomeAssistantError("No Transfer Switch found")
+        api, dev_id, dev_sn = result
+
+        pid = call.data["plan_id"]
+
+        # Find existing plan in coordinator data so we send a full plan dict
+        existing_plan = None
+        coordinator = None
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            if not isinstance(entry_data, dict):
+                continue
+            for coord in entry_data.get("coordinators", {}).values():
+                if coord.data and coord.data.get("_plans") is not None:
+                    for p in coord.data["_plans"]:
+                        if str(p.get("pid")) == str(pid):
+                            existing_plan = p
+                            coordinator = coord
+                            break
+
+        if existing_plan is None:
+            raise HomeAssistantError(f"Plan {pid} not found in coordinator data")
+
+        # Start from full existing plan, apply requested changes
+        plan = dict(existing_plan)
+        if "type" in call.data:
+            plan["tt"] = int(call.data["type"])
+        if "start_time" in call.data:
+            plan["st"] = call.data["start_time"]
+        if "end_time" in call.data:
+            plan["et"] = call.data["end_time"]
+        if "enabled" in call.data:
+            plan["sw"] = 1 if call.data["enabled"] else 0
+        if "days" in call.data:
+            plan["lps"] = call.data["days"]
+
+        await api.async_update_transfer_switch_plan(dev_id, dev_sn, plan)
+
+        # Optimistic update: patch coordinator data in place
+        if coordinator is not None:
+            for p in coordinator.data.get("_plans", []):
+                if str(p.get("pid")) == str(pid):
+                    p.update(plan)
+                    break
+            coordinator.async_set_updated_data(coordinator.data)
+
+    async def _handle_delete_plan(call: ServiceCall) -> None:
+        _LOGGER.info("delete_plan service called with: %s", call.data)
+        result = _find_transfer_switch(hass)
+        if result is None:
+            raise HomeAssistantError("No Transfer Switch found")
+        api, dev_id, dev_sn = result
+        _LOGGER.info("Deleting plan %s on device %s", call.data["plan_id"], dev_sn)
+
+        await api.async_delete_transfer_switch_plan(
+            dev_id, dev_sn, call.data["plan_id"],
+        )
+        await _refresh_plans_now(api, dev_sn)
+
+    hass.services.async_register(DOMAIN, "create_plan", _handle_create_plan)
+    hass.services.async_register(DOMAIN, "update_plan", _handle_update_plan)
+    hass.services.async_register(DOMAIN, "delete_plan", _handle_delete_plan)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

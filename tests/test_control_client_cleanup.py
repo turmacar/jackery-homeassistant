@@ -179,8 +179,10 @@ def install_dependency_stubs(stubbed_modules: dict[str, object]) -> None:
     const_mod.CONF_USERNAME = "username"
     const_mod.Platform = Platform
     core_mod.HomeAssistant = HomeAssistant
+    core_mod.ServiceCall = type("ServiceCall", (), {})
     exceptions_mod.ConfigEntryAuthFailed = ConfigEntryAuthFailed
     exceptions_mod.ConfigEntryNotReady = ConfigEntryNotReady
+    exceptions_mod.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
     update_coordinator_mod.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator_mod.UpdateFailed = UpdateFailed
     dt_mod.now = lambda: None

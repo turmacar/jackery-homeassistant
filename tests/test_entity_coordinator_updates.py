@@ -320,6 +320,10 @@ text = load_module(
     stubbed_modules,
 )
 
+# Capture the HomeAssistantError class at module load time so tests can
+# reference it even if another test file's teardown removes the module.
+_HomeAssistantError = sys.modules["homeassistant.exceptions"].HomeAssistantError
+
 
 def tearDownModule() -> None:
     """Restore sys.modules entries replaced by test-only stubs."""
@@ -712,9 +716,9 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(repeat_entity.available)
         self.assertIsNone(repeat_entity.current_option)
 
-        with self.assertRaises(sys.modules["homeassistant.exceptions"].HomeAssistantError):
+        with self.assertRaises(_HomeAssistantError):
             await time_entity.async_set_value("22:00-06:00")
-        with self.assertRaises(sys.modules["homeassistant.exceptions"].HomeAssistantError):
+        with self.assertRaises(_HomeAssistantError):
             await repeat_entity.async_select_option("Everyday")
 
     def test_writable_entities_use_base_name_handling(self) -> None:

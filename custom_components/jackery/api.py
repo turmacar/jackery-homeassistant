@@ -54,6 +54,9 @@ class JackeryAPI:
         self._token_expiry_time: float = (
             0  # We will assume a long expiry for simplicity
         )
+        self._mqtt_user_id: Optional[str] = None
+        self._mqtt_password_b64: Optional[str] = None
+        self._mac_id: str = self._generate_udid()
         self._control_client = None
         self._control_client_lock = asyncio.Lock()
         self._control_write_lock = asyncio.Lock()
@@ -137,6 +140,9 @@ class JackeryAPI:
 
             if data.get("code") == 0 and "token" in data:
                 self._token = data["token"]
+                login_data = data.get("data", {})
+                self._mqtt_user_id = str(login_data.get("userId", ""))
+                self._mqtt_password_b64 = str(login_data.get("mqttPassWord", ""))
                 _LOGGER.info("Successfully logged in and obtained token.")
                 return True
             else:
@@ -312,36 +318,97 @@ class JackeryAPI:
                     await self._async_reset_control_client(client)
                     client = await self._async_get_control_client()
 
+    def _build_mqtt_params(self) -> tuple[dict, str]:
+        """Build aiomqtt connection params from REST API login credentials.
+
+        Returns ``(params_dict, user_id)``.
+        """
+        if _socketry_mqtt_params is None:
+            raise RuntimeError("socketry is not installed")
+        if not self._mqtt_user_id or not self._mqtt_password_b64:
+            raise RuntimeError("MQTT credentials not available — call login() first")
+        creds = {
+            "userId": self._mqtt_user_id,
+            "mqttPassWord": self._mqtt_password_b64,
+            "macId": self._mac_id,
+        }
+        return _socketry_mqtt_params(creds), self._mqtt_user_id
+
     async def async_send_transfer_switch_command(
         self,
         device_id: str,
         device_sn: str,
         action_id: int,
         body: dict,
+        message_type: str = "DevicePropertyChange",
     ) -> None:
         """Send a raw MQTT command using the Transfer Switch protocol.
+
+        Uses MQTT credentials from the REST API login to avoid a
+        separate socketry login session that would compete for the
+        single-session MQTT password.
         """
-        if socketry is None:
-            raise RuntimeError("socketry is not installed")
+        if aiomqtt is None:
+            raise RuntimeError("aiomqtt is not installed")
 
-        async with self._control_write_lock:
-            client = await self._async_get_control_client()
-
-            for attempt in range(2):
-                try:
-                    await client._publish_command(device_sn, action_id, body)
-                    return
-                except Exception:
-                    if attempt == 1:
-                        await self._async_reset_control_client(client)
-                        raise
-                    _LOGGER.debug(
-                        "Transfer switch command failed (attempt %d), "
-                        "resetting control client and retrying",
-                        attempt + 1,
-                    )
-                    await self._async_reset_control_client(client)
-                    client = await self._async_get_control_client()
+        for attempt in range(2):
+            params, user_id = self._build_mqtt_params()
+            topic = f"hb/app/{user_id}/command"
+            ts = int(time.time() * 1000)
+            payload = json.dumps(
+                {
+                    "deviceSn": device_sn,
+                    "id": ts,
+                    "version": 0,
+                    "messageType": message_type,
+                    "actionId": action_id,
+                    "timestamp": ts,
+                    "body": body,
+                },
+                separators=(",", ":"),
+            )
+            _LOGGER.info(
+                "MQTT publish: topic=%s actionId=%d body=%s",
+                topic, action_id, body,
+            )
+            _LOGGER.info("MQTT payload: %s", payload)
+            try:
+                dev_topic = f"hb/app/{user_id}/device"
+                async with aiomqtt.Client(**params) as mqtt:
+                    await mqtt.subscribe(dev_topic, qos=1)
+                    await mqtt.publish(topic, payload, qos=1)
+                    # Wait briefly for device response
+                    try:
+                        async with asyncio.timeout(5):
+                            async for message in mqtt.messages:
+                                try:
+                                    data = json.loads(message.payload)
+                                except (json.JSONDecodeError, TypeError):
+                                    continue
+                                _LOGGER.info(
+                                    "MQTT response: messageType=%s actionId=%s body=%s",
+                                    data.get("messageType"),
+                                    data.get("actionId"),
+                                    data.get("body"),
+                                )
+                                if data.get("deviceSn") == device_sn:
+                                    return
+                    except TimeoutError:
+                        _LOGGER.warning(
+                            "No MQTT response within 5s for actionId=%d",
+                            action_id,
+                        )
+                return
+            except Exception:
+                if attempt == 1:
+                    raise
+                _LOGGER.debug(
+                    "Transfer switch command failed (attempt %d), "
+                    "refreshing credentials and retrying",
+                    attempt + 1,
+                )
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.login)
 
     async def async_set_device_dp(
         self,
@@ -383,13 +450,10 @@ class JackeryAPI:
         Socketry's subscribe loop filters out non-DevicePropertyChange messages,
         so this method handles the MQTT exchange directly.
         """
-        if socketry is None or aiomqtt is None:
-            raise RuntimeError("socketry/aiomqtt is not installed")
+        if aiomqtt is None:
+            raise RuntimeError("aiomqtt is not installed")
 
-        async with self._control_write_lock:
-            client = await self._async_get_control_client()
-            user_id = client.user_id
-            params = _socketry_mqtt_params(client._creds)
+        params, user_id = self._build_mqtt_params()
 
         cmd_topic = f"hb/app/{user_id}/command"
         dev_topic = f"hb/app/{user_id}/device"
@@ -446,6 +510,37 @@ class JackeryAPI:
             device_sn,
             14,  # actionId for UpdateElectricityStrategy
             {"cmd": 17, **plan},
+            message_type="UpdateElectricityStrategy",
+        )
+
+    async def async_create_transfer_switch_plan(
+        self,
+        device_id: str,
+        device_sn: str,
+        plan: dict,
+    ) -> None:
+        """Create a new charge/discharge plan on the Transfer Switch."""
+        await self.async_send_transfer_switch_command(
+            device_id,
+            device_sn,
+            13,  # actionId for InsertElectricityStrategy
+            {"cmd": 16, **plan},
+            message_type="InsertElectricityStrategy",
+        )
+
+    async def async_delete_transfer_switch_plan(
+        self,
+        device_id: str,
+        device_sn: str,
+        pid: str,
+    ) -> None:
+        """Delete a charge/discharge plan on the Transfer Switch."""
+        await self.async_send_transfer_switch_command(
+            device_id,
+            device_sn,
+            15,  # actionId for DeleteElectricityStrategy
+            {"cmd": 18, "pid": pid},
+            message_type="DeleteElectricityStrategy",
         )
 
     async def async_query_transfer_switch_circuits(
@@ -457,13 +552,10 @@ class JackeryAPI:
         Opens a short-lived MQTT connection, sends a QueryCircuitProperty
         command, and waits for the response containing the ``cir`` list.
         """
-        if socketry is None or aiomqtt is None:
-            raise RuntimeError("socketry/aiomqtt is not installed")
+        if aiomqtt is None:
+            raise RuntimeError("aiomqtt is not installed")
 
-        async with self._control_write_lock:
-            client = await self._async_get_control_client()
-            user_id = client.user_id
-            params = _socketry_mqtt_params(client._creds)
+        params, user_id = self._build_mqtt_params()
 
         cmd_topic = f"hb/app/{user_id}/command"
         dev_topic = f"hb/app/{user_id}/device"
