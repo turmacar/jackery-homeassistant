@@ -28,7 +28,6 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | Sensor                     | Description                                                           | Unit     |
 | -------------------------- | --------------------------------------------------------------------- | -------- |
 | Remaining Battery          | Current battery level                                                 | %        |
-| Backup Reserve             | Battery percentage reserved for power loss                            | %        | 
 | Battery Temperature        | Battery temperature                                                   | °C       |
 | Battery Status             | Idle, Charging, Discharging, or Fault                                 | text     |
 | Output Power               | Current power output                                                  | W        |
@@ -38,12 +37,11 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | Solar Panel Input Power    | Current Solar Panel input power                                       | W        |
 | Time to Full               | Estimated time to full charge                                         | hours    |
 | Remaining Output Time      | Estimated remaining runtime                                           | hours    |
-| AC Output Voltage          | Current AC output voltage                                             | V        |
-| AC Outlet Output Voltage   | Current AC output voltage of AC outlets                               | V        |
+| AC Output Voltage (Bus)    | AC output voltage on the internal bus                                 | V        |
+| AC Output Voltage (Outlet) | AC output voltage at the outlet terminals                             | V        |
 | AC Output Frequency        | Current AC output frequency                                           | Hz       |
 | Error Code                 | Reported device error code                                            | integer  |
-| Battery Pack               | External Battery Packs connected                                      | text     |
-| Batteries Indicated        | Number of External Battery Packs                                      | integer  |
+| Battery Connected          | Whether an external battery pack is connected                         | Yes/No   |
 | Power System State         | Power supplied by Grid or Station (batteries/solar)                   | text     |
 | Solar Type                 | None / High Voltage / Low Voltage / High & Low Voltage                | text     |
 | Parallel Connection        | None / Charge / Discharge                                             | text     |
