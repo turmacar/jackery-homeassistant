@@ -18,6 +18,8 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 - 🔌 **Output Status**: Binary sensors for AC, DC, DC car, and USB output status where supported by the device
 - 🎛️ **Device Controls**: Writable switches, selects, and number entities for supported Jackery settings
 - 📅 **Charging Plans**: Charging-plan switch, time window, and repeat schedule for supported Jackery Plus devices
+- 🏠 **Smart Transfer Switch**: Grid/Station toggle, UPS mode, force charge, working mode, backup reserve, circuit control, fault diagnostics, and scheduled plan management
+- ⚡ **Circuit Monitoring**: Per-circuit power sensors and on/off switches with automatic split-phase pair combining
 
 ## Supported Sensors
 
@@ -52,6 +54,24 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | AC1 Temperature Alarm      | OK / High Temperature / Low Temperature (Transfer Switch)             | text     |
 | AC2 Temperature Alarm      | OK / High Temperature / Low Temperature (Transfer Switch)             | text     |
 | Module Overload            | OK / Mains Power Overload / Energy Storage Overload (Transfer Switch) | text     |
+| Active Plan                | Currently executing scheduled plan (Transfer Switch)                  | text     |
+| Circuit *{name}* Power     | Per-circuit power consumption (Transfer Switch)                       | W        |
+| AC1 Battery Level          | Battery level of device connected to AC1 (Transfer Switch)            | %        |
+| AC1 Output Power           | Output power from AC1 (Transfer Switch)                               | W        |
+| AC1 Input Power            | Input power to AC1 (Transfer Switch)                                  | W        |
+| AC1 Remaining Time         | Estimated remaining runtime for AC1 (Transfer Switch)                 | hours    |
+| AC1 Time to Full           | Estimated time to full charge for AC1 (Transfer Switch)               | hours    |
+| AC1 Battery Status         | Battery state of AC1 (Transfer Switch)                                | text     |
+| AC1 Connected              | Whether a battery device is connected to AC1 (Transfer Switch)        | Yes/No   |
+| AC1 Battery Packs          | Number of add-on battery packs on AC1 (Transfer Switch)               | integer  |
+| AC2 Battery Level          | Battery level of device connected to AC2 (Transfer Switch)            | %        |
+| AC2 Output Power           | Output power from AC2  (Transfer Switch)                              | W        |
+| AC2 Input Power            | Input power to AC2  (Transfer Switch)                                 | W        |
+| AC2 Remaining Time         | Estimated remaining runtime for AC2  (Transfer Switch)                | hours    |
+| AC2 Time to Full           | Estimated time to full charge for AC2  (Transfer Switch)              | hours    |
+| AC2 Battery Status         | Battery state of AC2  (Transfer Switch)                               | text     |
+| AC2 Connected              | Whether a battery device is connected to AC2 (Transfer Switch)        | Yes/No   |
+| AC2 Battery Packs          | Number of add-on battery packs on AC2  (Transfer Switch)              | integer  |
 
 ### Binary Sensors (ON/OFF)
 
@@ -81,34 +101,38 @@ The integration creates writable entities only when the corresponding properties
 
 ### Switches
 
-| Entity            | Description                                                   |
-|-------------------|---------------------------------------------------------------|
-| AC Output         | Toggle AC output                                              |
-| DC Output         | Toggle combined DC output                                     |
-| DC Car Output     | Toggle DC car output                                          |
-| USB Output        | Toggle USB output                                             |
-| Super Fast Charge | Toggle super fast charge mode                                 |
-| UPS Mode          | Toggle UPS mode                                               |
-| Charging Plan     | Enable or disable charging plans                              |
-| Grid / Station    | Toggle between grid power and station power (Transfer Switch) |
-| Plan *{name}*     | Toggle individual scheduled plans (Transfer Switch)           |
+| Entity            | Description                                                            |
+|-------------------|------------------------------------------------------------------------|
+| AC Output         | Toggle AC output                                                       |
+| DC Output         | Toggle combined DC output                                              |
+| DC Car Output     | Toggle DC car output                                                   |
+| USB Output        | Toggle USB output                                                      |
+| Super Fast Charge | Toggle super fast charge mode                                          |
+| UPS Mode          | Toggle UPS mode                                                        |
+| Charging Plan     | Enable or disable charging plans                                       |
+| Grid / Station    | Toggle between grid power and station power (Transfer Switch)          |
+| Force Charge      | Force battery to charge from grid regardless of mode (Transfer Switch) |
+| Circuit *{name}*  | Toggle individual circuits on/off (Transfer Switch)                    |
+| Plan *{name}*     | Toggle individual scheduled plans (Transfer Switch)                    |
 
 ### Selects
 
-| Entity               | Options                                        |
-|----------------------|------------------------------------------------|
-| Light Mode           | `off`, `low`, `high`, `sos`                    |
-| Charge Speed         | `fast`, `mute`                                 |
-| Battery Protection   | `full`, `eco`                                  |
-| Charging Plan Repeat | `Everyday`, `Weekdays`, `Weekends`, `Once`     |
+| Entity               | Options                                                                       |
+|----------------------|-------------------------------------------------------------------------------|
+| Light Mode           | `off`, `low`, `high`, `sos`                                                   |
+| Charge Speed         | `fast`, `mute`                                                                |
+| Battery Protection   | `full`, `eco`                                                                 |
+| Working Mode         | `Automatic Charging`, `Scheduled Tasks`, `Self Consumption` (Transfer Switch) |
+| Charging Plan Repeat | `Everyday`, `Weekdays`, `Weekends`, `Once`                                    |
 
 ### Numbers
 
-| Entity         | Description           | Unit    |
-|----------------|-----------------------|---------|
-| Auto Shutdown  | Auto shutdown delay   | minutes |
-| Energy Saving  | Energy saving timer   | minutes |
-| Screen Timeout | Screen timeout delay  | minutes |
+| Entity         | Description                                              | Unit    |
+|----------------|----------------------------------------------------------|---------|
+| Auto Shutdown  | Auto shutdown delay                                      | minutes |
+| Energy Saving  | Energy saving timer                                      | minutes |
+| Screen Timeout | Screen timeout delay                                     | minutes |
+| Backup Reserve | Minimum battery % reserved for outages (Transfer Switch) | %       |
 
 ### Text
 
@@ -122,6 +146,8 @@ The integration creates writable entities only when the corresponding properties
 - Charging plans are not available for devices connected to a Smart Transfer Switch.
 - Scheduled plan entities (plan sensor and per-plan toggle switches) appear only for the Smart Transfer Switch.
 - Fault diagnostic entities are created when the device reports an `fz` sub-object. Multi-state faults show human-readable labels; binary faults show Problem/OK.
+- AC1/AC2 battery slot sensors appear when the Transfer Switch reports `ac1`/`ac2` sub-objects. Battery pack count sensors include per-pack serial number and battery level attributes. Add-on packs take time to populate after being plugged in.
+- Circuit entities (power sensors and on/off switches) appear for Transfer Switch devices. Split-phase pairs are automatically combined into single entities.
 - `Charging Plan` appears when the device reports DP `107`.
 - `Charging Plan Time` and `Charging Plan Repeat` appear when the device reports DP `108`.
 - Devices that split DC control into `odcu` and `odcc` will not show the combined `DC Output` entity.
