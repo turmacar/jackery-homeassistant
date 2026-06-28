@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import logging
+import threading
 import time
 import uuid
 from typing import Optional
@@ -60,6 +61,8 @@ class JackeryAPI:
         self._control_client = None
         self._control_client_lock = asyncio.Lock()
         self._control_write_lock = asyncio.Lock()
+        self._login_lock = threading.Lock()
+        self._last_login_time: float = 0
 
     def _name_uuid_from_bytes_java(self, data: bytes) -> str:
         """Generate a version 3 UUID using an MD5 hash."""
@@ -95,6 +98,16 @@ class JackeryAPI:
 
     def login(self) -> bool:
         """Perform the login process and store the token."""
+        with self._login_lock:
+            # If another thread just logged in, reuse its credentials
+            if time.monotonic() - self._last_login_time < 5 and self._token:
+                _LOGGER.debug("Skipping login — another thread refreshed credentials %.1fs ago",
+                              time.monotonic() - self._last_login_time)
+                return True
+            return self._login_inner()
+
+    def _login_inner(self) -> bool:
+        """Actual login implementation (must be called with _login_lock held)."""
         _LOGGER.info("Attempting to login to Jackery service")
         mac_id = self._generate_udid()
         login_bean = {
@@ -143,6 +156,7 @@ class JackeryAPI:
                 login_data = data.get("data", {})
                 self._mqtt_user_id = str(login_data.get("userId", ""))
                 self._mqtt_password_b64 = str(login_data.get("mqttPassWord", ""))
+                self._last_login_time = time.monotonic()
                 _LOGGER.info("Successfully logged in and obtained token.")
                 return True
             else:
