@@ -6,7 +6,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![maintainer](https://img.shields.io/badge/maintainer-%40theak-blue.svg)](https://github.com/theak)
-[![version](https://img.shields.io/badge/version-1.0.5-blue.svg)](https://github.com/theak/jackery-homeassistant)
+[![version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/theak/jackery-homeassistant)
 
 Custom Home Assistant integration for monitoring and controlling Jackery portable power stations. This integration provides real-time sensor data for your Jackery devices along with writable controls for supported settings and charging plans on supported Jackery Plus models.
 
