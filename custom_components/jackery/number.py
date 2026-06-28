@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .api import JackeryAPI
 from .const import DOMAIN, ENTITY_HELP_TEXT
+from homeassistant.const import EntityCategory
 from .protocol import control_spec, supported_keys
 
 NUMBER_KEYS = ("ast", "pm", "sltb", "ddt")
@@ -28,14 +29,15 @@ TRANSFER_SWITCH_NUMBER_COMMANDS: dict[str, tuple[int, int]] = {
     "ddt": (19, 19),
 }
 
+def _number_desc(key: str, **kwargs) -> EntityDescription:
+    spec = control_spec(key)
+    return EntityDescription(key=spec.key, name=spec.name, icon=spec.icon, **kwargs)
+
 NUMBER_DESCRIPTIONS: dict[str, EntityDescription] = {
-    key: EntityDescription(
-        key=spec.key,
-        name=spec.name,
-        icon=spec.icon,
-    )
-    for key in NUMBER_KEYS
-    for spec in (control_spec(key),)
+    "ast": _number_desc("ast", entity_category=EntityCategory.CONFIG),
+    "pm": _number_desc("pm", entity_category=EntityCategory.CONFIG),
+    "sltb": _number_desc("sltb", entity_category=EntityCategory.CONFIG),
+    "ddt": _number_desc("ddt", entity_category=None),
 }
 NUMBER_RANGES: dict[str, tuple[float, float, float]] = {
     key: (0, 1440, 1) for key in ("ast", "pm", "sltb")
@@ -102,9 +104,11 @@ class JackeryNumberEntity(CoordinatorEntity, NumberEntity):
         self._attr_unique_id = f"{self._device_id}_{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        if description.entity_category is not None:
+            self._attr_entity_category = description.entity_category
         unit = NUMBER_UNITS.get(description.key)
         self._attr_native_unit_of_measurement = UnitOfTime.MINUTES if unit is None else unit
-        self._attr_mode = NumberMode.AUTO if description.key == "ddt" else NumberMode.BOX
+        self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = min_value
         self._attr_native_max_value = max_value
         self._attr_native_step = step

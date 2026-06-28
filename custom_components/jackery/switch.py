@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .api import JackeryAPI
 from .const import CHARGING_PLAN_SWITCH, DOMAIN, ENTITY_HELP_TEXT
+from homeassistant.const import EntityCategory
 from .protocol import (
     control_spec,
     has_charging_plan_switch_support,
@@ -34,19 +35,25 @@ TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
     "rc": (3, 5),
 }
 
+def _switch_desc(key: str, **kwargs) -> EntityDescription:
+    spec = control_spec(key)
+    return EntityDescription(key=spec.key, name=spec.name, icon=spec.icon, **kwargs)
+
 SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
-    key: EntityDescription(
-        key=spec.key,
-        name=spec.name,
-        icon=spec.icon,
-    )
-    for key in SWITCH_KEYS
-    for spec in (control_spec(key),)
+    "oac": _switch_desc("oac", entity_category=None),
+    "odc": _switch_desc("odc", entity_category=None),
+    "odcu": _switch_desc("odcu", entity_category=None),
+    "odcc": _switch_desc("odcc", entity_category=None),
+    "sfc": _switch_desc("sfc", entity_category=EntityCategory.CONFIG),
+    "pss": _switch_desc("pss", entity_category=None),
+    "ups": _switch_desc("ups", entity_category=None),
+    "rc": _switch_desc("rc", entity_category=None),
 }
 CHARGING_PLAN_SWITCH_DESCRIPTION = EntityDescription(
     key=CHARGING_PLAN_SWITCH,
     name="Charging Plan",
     icon="mdi:calendar-clock",
+    entity_category=None,
 )
 
 
@@ -192,6 +199,8 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
         self._attr_unique_id = f"{self._device_id}_switch_{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        if description.entity_category is not None:
+            self._attr_entity_category = description.entity_category
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             name=device_info.get("devName", f"Jackery Device {self._device_id}"),
@@ -275,6 +284,7 @@ class JackeryChargingPlanSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._attr_unique_id = f"{self._device_id}_switch_{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        self._attr_entity_category = description.entity_category
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             name=device_info.get("devName", f"Jackery Device {self._device_id}"),

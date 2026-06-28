@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .api import JackeryAPI
 from .const import CHARGING_PLAN_DATA, DOMAIN, ENTITY_HELP_TEXT
+from homeassistant.const import EntityCategory
 from .protocol import (
     CHARGING_PLAN_REPEAT_TO_MASK,
     charging_plan_repeat_mask,
@@ -33,14 +34,16 @@ TRANSFER_SWITCH_SELECT_COMMANDS: dict[str, tuple[int, int]] = {
     "en": (20, 20),
 }
 SELECT_KEYS = ("lm", "cs", "lps", "en")
+
+def _select_desc(key: str, **kwargs) -> EntityDescription:
+    spec = control_spec(key)
+    return EntityDescription(key=spec.key, name=spec.name, icon=spec.icon, **kwargs)
+
 SELECT_DESCRIPTIONS: dict[str, EntityDescription] = {
-    key: EntityDescription(
-        key=spec.key,
-        name=spec.name,
-        icon=spec.icon,
-    )
-    for key in SELECT_KEYS
-    for spec in (control_spec(key),)
+    "lm": _select_desc("lm", entity_category=EntityCategory.CONFIG),
+    "cs": _select_desc("cs", entity_category=EntityCategory.CONFIG),
+    "lps": _select_desc("lps", entity_category=EntityCategory.CONFIG),
+    "en": _select_desc("en", entity_category=None),
 }
 SELECT_OPTIONS: dict[str, tuple[str, ...]] = {
     key: control_spec(key).options for key in SELECT_KEYS
@@ -50,6 +53,7 @@ CHARGING_PLAN_REPEAT_DESCRIPTION = EntityDescription(
     key=CHARGING_PLAN_DATA,
     name="Charging Plan Repeat",
     icon="mdi:calendar-week",
+    entity_category=EntityCategory.CONFIG,
 )
 
 
@@ -161,6 +165,8 @@ class JackerySelectEntity(CoordinatorEntity, SelectEntity):
         self._attr_unique_id = f"{self._device_id}_{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        if description.entity_category is not None:
+            self._attr_entity_category = description.entity_category
         self._attr_options = list(self._options)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
@@ -246,6 +252,7 @@ class JackeryChargingPlanRepeatEntity(CoordinatorEntity, SelectEntity):
         self._attr_unique_id = f"{self._device_id}_charging_plan_repeat"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        self._attr_entity_category = description.entity_category
         self._attr_options = list(CHARGING_PLAN_REPEAT_OPTIONS)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},

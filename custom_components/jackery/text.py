@@ -8,6 +8,7 @@ from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity import DeviceInfo, EntityDescription
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -27,6 +28,7 @@ CHARGING_PLAN_TIME_DESCRIPTION = EntityDescription(
     key=CHARGING_PLAN_DATA,
     name="Charging Plan Time",
     icon="mdi:clock-outline",
+    entity_category=EntityCategory.CONFIG,
 )
 CHARGING_PLAN_TIME_PATTERN = (
     r"^(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$"
@@ -131,6 +133,7 @@ class JackeryChargingPlanTimeEntity(CoordinatorEntity, TextEntity):
         self._attr_unique_id = f"{self._device_id}_charging_plan_time"
         self._attr_name = description.name
         self._attr_icon = description.icon
+        self._attr_entity_category = description.entity_category
         self._attr_mode = TextMode.TEXT
         self._attr_pattern = CHARGING_PLAN_TIME_PATTERN
         self._attr_native_min = 11

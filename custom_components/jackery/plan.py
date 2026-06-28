@@ -163,6 +163,7 @@ class JackeryActivePlanSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{device_info['devId']}_active_plan"
         self._attr_name = "Active Plan"
         self._attr_icon = "mdi:calendar-check"
+        self._attr_entity_category = None
         self._attr_device_info = _device_info(device_info)
 
     @property
@@ -200,6 +201,7 @@ class JackeryPlanSwitch(CoordinatorEntity, SwitchEntity):
         self._device_id = device_info["devId"]
         self._device_sn = device_info["devSn"]
         self._attr_unique_id = f"{self._device_id}_plan_{pid}"
+        self._attr_entity_category = EntityCategory.CONFIG
         self._attr_device_info = _device_info(device_info)
         # Set initial name from current plan data so HA caches a good name
         plan = _find_plan(coordinator, pid)

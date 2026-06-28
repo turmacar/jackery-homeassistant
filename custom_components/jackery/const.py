@@ -52,8 +52,7 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "acohz": "Frequency of the AC output waveform.",
     "ec": "Device error code.",
     "bs": "Battery state: Idle, Charging, Discharging, or Fault.",
-    "bp": "Connected external battery pack data.",
-    "bi": "Number of external battery packs detected.",
+    "bi": "Whether an external battery pack is connected.",
     "uo": "Device timezone offset from UTC (converted to hours).",
     "pss": "Whether power is supplied by grid or station (batteries/solar).",
     "last_updated": "Timestamp of the last successful data poll from Jackery API.",
@@ -215,13 +214,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
-    ),
-    JackerySensorEntityDescription(
-        key="ddt",
-        name="Backup Reserve",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
     ),
     JackerySensorEntityDescription(
         key="bt",
@@ -229,6 +222,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
@@ -237,6 +231,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
     ),
     JackerySensorEntityDescription(
         key="ip",
@@ -244,6 +239,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
     ),
     JackerySensorEntityDescription(
         key="acip",
@@ -251,6 +247,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
     ),
     JackerySensorEntityDescription(
         key="cip",
@@ -258,6 +255,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
     ),
     JackerySensorEntityDescription(
         key="acpsp",
@@ -265,6 +263,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
@@ -273,6 +272,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
@@ -281,22 +281,25 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=None,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
         key="acov",
-        name="AC Output Voltage",
+        name="AC Output Voltage (Bus)",
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
         key="acov1",
-        name="AC Outlet Output Voltage",
+        name="AC Output Voltage (Outlet)",
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
@@ -305,6 +308,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfFrequency.HERTZ,
         device_class=SensorDeviceClass.FREQUENCY,
         state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
     JackerySensorEntityDescription(
         key="ec",
@@ -316,17 +320,13 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         key="bs",
         name="Battery Status",
         icon="mdi:battery-heart-variant",
+        entity_category=None,
         value=_battery_status_value,
     ),
     JackerySensorEntityDescription(
-        key="bp",
-        name="Battery Pack",
-        icon="mdi:battery",
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    JackerySensorEntityDescription(
+
         key="bi",
-        name="Batteries Indicated",
+        name="Battery Connected",
         icon="mdi:battery-multiple",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -342,8 +342,8 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         key="pss",
         name="Power System State",
         icon="mdi:transmission-tower",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value=_grid_status_value
+        entity_category=None,
+        value=_grid_status_value,
     ),
     JackerySensorEntityDescription(
         key="ss",
@@ -462,7 +462,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
     JackerySensorEntityDescription(
         key="ac1_bi",
         name="AC1 Connected",
-        icon="mdi:battery-multiple",
+        icon="mdi:battery-heart-variant",
         entity_category=EntityCategory.DIAGNOSTIC,
         value=_connected_value,
     ),
@@ -518,7 +518,7 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
     JackerySensorEntityDescription(
         key="ac2_bi",
         name="AC2 Connected",
-        icon="mdi:battery-multiple",
+        icon="mdi:battery-heart-variant",
         entity_category=EntityCategory.DIAGNOSTIC,
         value=_connected_value,
     ),
@@ -550,24 +550,28 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
         name="AC Output",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:power-plug",
+        entity_category=None,
     ),
     BinarySensorEntityDescription(
         key="odc",
         name="DC Output",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:power",
+        entity_category=None,
     ),
     BinarySensorEntityDescription(
         key="odcc",
         name="DC Car Output",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:car",
+        entity_category=None,
     ),
     BinarySensorEntityDescription(
         key="odcu",
         name="USB Output",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:usb-port",
+        entity_category=None,
     ),
     BinarySensorEntityDescription(
         key="ta",

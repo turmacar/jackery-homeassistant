@@ -20,7 +20,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfPower
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
@@ -166,6 +166,7 @@ class JackeryCircuitPowerSensor(CoordinatorEntity, SensorEntity):
         )
         self._attr_name = f"Circuit {self._circuit_name} Power"
         self._attr_icon = "mdi:flash"
+        self._attr_entity_category = None
         self._attr_device_info = _device_info(device_info)
 
     @property
@@ -221,6 +222,7 @@ class JackeryCircuitSwitch(CoordinatorEntity, SwitchEntity):
         )
         self._attr_name = f"Circuit {self._circuit_name}"
         self._attr_icon = "mdi:electric-switch"
+        self._attr_entity_category = EntityCategory.CONFIG
         self._attr_device_info = _device_info(device_info)
 
     @property

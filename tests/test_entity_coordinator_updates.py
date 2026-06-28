@@ -129,6 +129,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
         key: str
         name: str | None = None
         icon: str | None = None
+        entity_category: str | None = None
 
     @dataclass
     class SensorEntityDescription(EntityDescription):
@@ -137,7 +138,6 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
         native_unit_of_measurement: str | None = None
         device_class: str | None = None
         state_class: str | None = None
-        entity_category: str | None = None
 
     @dataclass
     class BinarySensorEntityDescription(EntityDescription):
@@ -172,6 +172,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     class EntityCategory:
         """Stub entity category enum."""
 
+        CONFIG = "config"
         DIAGNOSTIC = "diagnostic"
 
     class UnitOfElectricPotential:
