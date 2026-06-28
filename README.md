@@ -45,6 +45,8 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | Battery Pack               | External Battery Packs connected                                      | text     |
 | Batteries Indicated        | Number of External Battery Packs                                      | integer  |
 | Power System State         | Power supplied by Grid or Station (batteries/solar)                   | text     |
+| Solar Type                 | None / High Voltage / Low Voltage / High & Low Voltage                | text     |
+| Parallel Connection        | None / Charge / Discharge                                             | text     |
 | UTC offset                 | Timezone offset in hours                                              | integer  |
 | Last Updated               | Timestamp of last successful data refresh                             | ISO 8601 |
 | Scheduled Plans            | Number of active scheduled plans (Transfer Switch)                    | integer  |
@@ -75,23 +77,25 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 
 ### Binary Sensors (ON/OFF)
 
-| Sensor                  | Description                                |
-|-------------------------|--------------------------------------------|
-| AC Output               | AC output status                           |
-| DC Output               | Combined DC output status                  |
-| DC Car Output           | DC car port output status                  |
-| USB Output              | USB output status                          |
-| Temperature Alarm       | Device temperature alarm status            |
-| Temperature Protection  | Device temperature protection status       |
-| Power Alarm             | Device power/protection alarm              |
-| UPS Mode                | Device UPS mode status                     |
-| Outlets Active          | Whether any device outlets are active      |
-| Emergency Stop          | Emergency stop fault (Transfer Switch)     |
-| AC1 Communication Fault | AC1 communication fault (Transfer Switch)  |
-| AC2 Communication Fault | AC2 communication fault (Transfer Switch)  |
-| Cover Open              | Cover open fault (Transfer Switch)         |
-| Temperature Fault       | NTC temperature fault (Transfer Switch)    |
-| RTC Fault               | Real-time clock fault (Transfer Switch)    |
+| Sensor                     | Description                                |
+|----------------------------|--------------------------------------------|
+| AC Output                  | AC output status                           |
+| DC Output                  | Combined DC output status                  |
+| DC Car Output              | DC car port output status                  |
+| USB Output                 | USB output status                          |
+| Temperature Alarm          | Device temperature alarm status            |
+| Temperature Protection     | Device temperature protection status       |
+| Power Alarm                | Device power/protection alarm              |
+| UPS Mode                   | Device UPS mode status                     |
+| Outlets Active             | Whether any device outlets are active      |
+| Transfer Switch Connected  | Device is connected to a Transfer Switch   |
+| AC Pass-through            | AC power is being passed through           |
+| Emergency Stop             | Emergency stop fault (Transfer Switch)     |
+| AC1 Communication Fault    | AC1 communication fault (Transfer Switch)  |
+| AC2 Communication Fault    | AC2 communication fault (Transfer Switch)  |
+| Cover Open                 | Cover open fault (Transfer Switch)         |
+| Temperature Fault          | NTC temperature fault (Transfer Switch)    |
+| RTC Fault                  | Real-time clock fault (Transfer Switch)    |
 
 **Note:** Different Jackery device models may report different combinations of DC output sensors. Some models use a combined `odc` parameter while others use separate `odcc` and `odcu` parameters. The integration hides the combined DC entity when split USB/car output keys are available.
 

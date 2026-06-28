@@ -88,7 +88,12 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac2_bs": "Battery state of the device connected to AC2.",
     "ac2_bi": "Whether a battery device is connected to AC2.",
     "ac2_bp_count": "Number of add-on battery packs connected to the AC2 device.",
+    # Explorer 5000 diagnostic sensors
+    "ss": "Solar panel input type: None, High Voltage, Low Voltage, or both.",
+    "pc": "Parallel connection mode: None, Charge, or Discharge.",
     # Binary sensors
+    "box": "Whether this device is connected to a Smart Transfer Switch.",
+    "acpss": "Whether AC power is being passed through to the output.",
     "oac": "Whether the AC outlet is currently outputting power.",
     "odc": "Whether the combined DC output (USB + car) is active.",
     "odcc": "Whether the DC car port is outputting power.",
@@ -147,6 +152,19 @@ def _connected_value(value: object) -> str:
         return "Yes" if int(value) else "No"
     except (TypeError, ValueError):
         return str(value)
+
+SOLAR_TYPE_LABELS: dict[int, str] = {
+    0: "None",
+    1: "High Voltage",
+    2: "Low Voltage",
+    3: "High & Low Voltage",
+}
+
+PARALLEL_CONNECTION_LABELS: dict[int, str] = {
+    0: "None",
+    1: "Charge",
+    2: "Discharge",
+}
 
 MAINS_FAULT_LABELS: dict[int, str] = {
     0: "OK",
@@ -326,6 +344,20 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         icon="mdi:transmission-tower",
         entity_category=EntityCategory.DIAGNOSTIC,
         value=_grid_status_value
+    ),
+    JackerySensorEntityDescription(
+        key="ss",
+        name="Solar Type",
+        icon="mdi:solar-power-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(SOLAR_TYPE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="pc",
+        name="Parallel Connection",
+        icon="mdi:battery-sync",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(PARALLEL_CONNECTION_LABELS),
     ),
     JackerySensorEntityDescription(
         key="last_updated",
@@ -570,6 +602,20 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
         name="Outlets Active",
         device_class=BinarySensorDeviceClass.POWER,
         icon="mdi:power-plug",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="box",
+        name="Transfer Switch Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:transit-transfer",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="acpss",
+        name="AC Pass-through",
+        device_class=BinarySensorDeviceClass.POWER,
+        icon="mdi:power-plug-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     # Fault sub-object fields

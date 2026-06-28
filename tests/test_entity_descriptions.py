@@ -55,6 +55,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     class BinarySensorDeviceClass:
         """Stub binary sensor device class enum."""
 
+        CONNECTIVITY = "connectivity"
         POWER = "power"
         PROBLEM = "problem"
 
@@ -210,7 +211,13 @@ class EntityDescriptionTests(unittest.TestCase):
             for description in const.BINARY_SENSOR_DESCRIPTIONS
         }
 
-        self.assertNotIn("acpss", binary_sensors)
+        self.assertEqual(binary_sensors["acpss"].name, "AC Pass-through")
+        self.assertEqual(binary_sensors["acpss"].device_class, "power")
+        self.assertEqual(binary_sensors["acpss"].entity_category, "diagnostic")
+
+        self.assertEqual(binary_sensors["box"].name, "Transfer Switch Connected")
+        self.assertEqual(binary_sensors["box"].device_class, "connectivity")
+        self.assertEqual(binary_sensors["box"].entity_category, "diagnostic")
 
         self.assertEqual(binary_sensors["pmb"].name, "Outlets Active")
         self.assertEqual(binary_sensors["pmb"].entity_category, "diagnostic")

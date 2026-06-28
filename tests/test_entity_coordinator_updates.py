@@ -160,6 +160,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     class BinarySensorDeviceClass:
         """Stub binary sensor device class enum."""
 
+        CONNECTIVITY = "connectivity"
         POWER = "power"
         PROBLEM = "problem"
 
