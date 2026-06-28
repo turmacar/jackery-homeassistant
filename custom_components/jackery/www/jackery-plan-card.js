@@ -17,6 +17,9 @@ class JackeryPlanCard extends HTMLElement {
     this._hass = null;
     this._showForm = false;
     this._formData = { type: 2, start_time: "14:00", end_time: "19:00", days: "1111111" };
+    this._dragSrcIdx = null;
+    this._cachedOrder = null;
+    this._locked = true;
   }
 
   setConfig(config) {
@@ -27,6 +30,8 @@ class JackeryPlanCard extends HTMLElement {
   set hass(hass) {
     const prev = this._hass;
     this._hass = hass;
+    // Load saved plan order on first hass set
+    if (!prev && hass) this._loadOrder();
     // Only re-render when our entity's state object actually changes.
     const entityId = this._resolveEntity();
     if (entityId && prev) {
@@ -44,7 +49,7 @@ class JackeryPlanCard extends HTMLElement {
     return match || null;
   }
 
-  _getPlans() {
+  _getRawPlans() {
     if (!this._hass) return [];
     const entityId = this._resolveEntity();
     if (!entityId) return [];
@@ -65,6 +70,108 @@ class JackeryPlanCard extends HTMLElement {
       });
     }
     return plans;
+  }
+
+  /** Returns ordered array of plan objects and divider objects ({_divider: true, label: "..."}) */
+  _getItems() {
+    const plans = this._getRawPlans();
+    const entityId = this._resolveEntity();
+    return this._applySavedOrder(plans, entityId);
+  }
+
+  /** For backwards compat — returns only actual plans (no dividers) */
+  _getPlans() {
+    return this._getItems().filter(x => !x._divider);
+  }
+
+  _orderKey() {
+    return "jackery_plan_order";
+  }
+
+  _getSavedOrder() {
+    return this._cachedOrder;
+  }
+
+  async _loadOrder() {
+    if (!this._hass || this._cachedOrder !== null) return;
+    try {
+      const result = await this._hass.callWS({ type: "frontend/get_user_data", key: this._orderKey() });
+      this._cachedOrder = (result && result.value) || [];
+      const lockResult = await this._hass.callWS({ type: "frontend/get_user_data", key: "jackery_plan_locked" });
+      this._locked = !!(lockResult && lockResult.value);
+      this._render();
+    } catch { this._cachedOrder = []; }
+  }
+
+  _saveOrder(pids) {
+    this._cachedOrder = pids;
+    if (!this._hass) return;
+    this._hass.callWS({ type: "frontend/set_user_data", key: this._orderKey(), value: pids }).catch(() => {});
+  }
+
+  _applySavedOrder(plans, entityId) {
+    const order = this._getSavedOrder();
+    if (!order || !order.length) return plans;
+    const byPid = new Map(plans.map(p => [p.pid, p]));
+    const ordered = [];
+    for (const entry of order) {
+      if (typeof entry === "object" && entry._divider) {
+        // Divider entry
+        ordered.push({ _divider: true, label: entry.label || "" });
+      } else {
+        // Plan PID
+        const p = byPid.get(entry);
+        if (p) {
+          ordered.push(p);
+          byPid.delete(entry);
+        }
+      }
+    }
+    // Append any new plans not in the saved order
+    for (const p of byPid.values()) ordered.push(p);
+    return ordered;
+  }
+
+  _saveCurrentOrder(items) {
+    const order = items.map(x => x._divider ? { _divider: true, label: x.label } : x.pid);
+    this._saveOrder(order);
+  }
+
+  _toggleLock() {
+    this._locked = !this._locked;
+    if (this._hass) {
+      this._hass.callWS({ type: "frontend/set_user_data", key: "jackery_plan_locked", value: this._locked }).catch(() => {});
+    }
+    if (this._locked) this._showForm = false;
+    this._render();
+  }
+
+  _addDivider() {
+    const label = prompt("Divider label:");
+    if (label === null) return;
+    const items = this._getItems();
+    items.push({ _divider: true, label });
+    this._saveCurrentOrder(items);
+    this._render();
+  }
+
+  _editDivider(idx) {
+    const items = this._getItems();
+    const item = items[idx];
+    if (!item || !item._divider) return;
+    const label = prompt("Divider label:", item.label);
+    if (label === null) return;
+    item.label = label;
+    this._saveCurrentOrder(items);
+    this._render();
+  }
+
+  _removeDivider(idx) {
+    const items = this._getItems();
+    if (!items[idx] || !items[idx]._divider) return;
+    items.splice(idx, 1);
+    this._saveCurrentOrder(items);
+    this._render();
   }
 
   _timeToPercent(timeStr) {
@@ -149,7 +256,7 @@ class JackeryPlanCard extends HTMLElement {
 
   _render() {
     if (!this.shadowRoot) return;
-    const plans = this._getPlans();
+    const items = this._getItems();
     const title = this._config.title || "Charging Plans";
 
     this.shadowRoot.innerHTML = `
@@ -295,6 +402,65 @@ class JackeryPlanCard extends HTMLElement {
           font-size: 0.9em;
         }
         .delete-btn { color: var(--error-color, #db4437) !important; }
+        .plan[draggable="true"], .divider[draggable="true"] { cursor: grab; }
+        .plan.dragging, .divider.dragging { opacity: 0.4; }
+        .plan.drag-over, .divider.drag-over { border-top: 2px solid var(--primary-color, #03a9f4); margin-top: -1px; }
+        .drag-handle {
+          cursor: grab;
+          color: var(--secondary-text-color);
+          font-size: 1.1em;
+          margin-right: 8px;
+          user-select: none;
+        }
+        .divider {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin: 6px 0;
+          padding: 4px 0;
+        }
+        .divider-line {
+          flex: 1;
+          height: 1px;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .divider-label {
+          font-size: 0.8em;
+          font-weight: 500;
+          color: var(--secondary-text-color);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+        .divider-label:hover { text-decoration: underline; }
+        .divider-remove {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: var(--secondary-text-color);
+          font-size: 0.85em;
+          padding: 2px 4px;
+          border-radius: 4px;
+          line-height: 1;
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .divider:hover .divider-remove { opacity: 1; }
+        .divider-remove:hover { color: var(--error-color, #db4437); }
+        .lock-btn {
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 8px;
+          color: var(--secondary-text-color);
+          line-height: 1;
+          display: flex;
+          align-items: center;
+          --mdc-icon-size: 20px;
+        }
+        .lock-btn:hover { background: var(--divider-color, #e0e0e0); }
         /* Form */
         .form {
           border: 1px solid var(--divider-color, #e0e0e0);
@@ -377,27 +543,40 @@ class JackeryPlanCard extends HTMLElement {
       <ha-card>
         <div class="header">
           <h2>${title}</h2>
-          <button class="add-btn" id="add-btn">+ Add</button>
+          ${!this._locked ? `
+            <button class="add-btn" id="add-divider-btn">| Divider</button>
+            <button class="add-btn" id="add-btn">+ Add</button>
+          ` : ''}
+          <button class="lock-btn" id="lock-btn" title="${this._locked ? 'Unlock editing' : 'Lock editing'}"><ha-icon icon="${this._locked ? 'mdi:lock' : 'mdi:lock-open-variant'}"></ha-icon></button>
         </div>
-        ${plans.length === 0 && !this._showForm
+        ${items.length === 0 && !this._showForm
           ? '<div class="no-plans">No plans configured</div>'
-          : plans.map((p, i) => `
-            <div class="plan">
+          : items.map((item, i) => item._divider ? `
+            <div class="divider" ${!this._locked ? 'draggable="true"' : ''} data-item-idx="${i}">
+              ${!this._locked ? '<span class="drag-handle">⠿</span>' : ''}
+              <div class="divider-line"></div>
+              <span class="divider-label" ${!this._locked ? `data-edit-divider="${i}"` : ''}>${item.label || "—"}</span>
+              <div class="divider-line"></div>
+              ${!this._locked ? `<button class="divider-remove" data-remove-divider="${i}" title="Remove divider">✕</button>` : ''}
+            </div>
+          ` : `
+            <div class="plan" ${!this._locked ? 'draggable="true"' : ''} data-item-idx="${i}">
               <div class="plan-row">
+                ${!this._locked ? '<span class="drag-handle">⠿</span>' : ''}
                 <div class="plan-info">
-                  <div class="plan-type ${p.type.toLowerCase()}">
-                    <span class="icon">${p.type === "Charge" ? "🔋" : "⚡"}</span>
-                    ${p.type}
+                  <div class="plan-type ${item.type.toLowerCase()}">
+                    <span class="icon">${item.type === "Charge" ? "🔋" : "⚡"}</span>
+                    ${item.type}
                   </div>
-                  <div class="plan-time">${p.start} → ${p.end}</div>
+                  <div class="plan-time">${item.start} → ${item.end}</div>
                 </div>
                 <div class="plan-actions">
-                  <button class="toggle ${p.enabled ? "on" : "off"}" data-toggle="${i}"></button>
-                  <button class="delete-btn" data-delete="${i}" title="Delete">🗑️</button>
+                  <button class="toggle ${item.enabled ? "on" : "off"}" data-toggle="${i}"></button>
+                  ${!this._locked ? `<button class="delete-btn" data-delete="${i}" title="Delete">🗑️</button>` : ''}
                 </div>
               </div>
-              ${this._renderTimebar(p)}
-              <div class="day-chips">${this._renderDayChips(p.days)}</div>
+              ${this._renderTimebar(item)}
+              <div class="day-chips">${this._renderDayChips(item.days)}</div>
             </div>
           `).join("")
         }
@@ -406,26 +585,141 @@ class JackeryPlanCard extends HTMLElement {
     `;
 
     // Bind events
+    this.shadowRoot.getElementById("lock-btn")?.addEventListener("click", () => {
+      this._toggleLock();
+    });
     this.shadowRoot.getElementById("add-btn")?.addEventListener("click", () => {
       this._showForm = !this._showForm;
       this._formData = { type: 2, start_time: "14:00", end_time: "19:00", days: "1111111" };
       this._render();
     });
+    this.shadowRoot.getElementById("add-divider-btn")?.addEventListener("click", () => {
+      this._addDivider();
+    });
 
     this.shadowRoot.querySelectorAll("[data-toggle]").forEach(btn => {
       btn.addEventListener("click", () => {
         const idx = parseInt(btn.dataset.toggle);
-        const plan = this._getPlans()[idx];
-        if (plan) this._togglePlan(plan.pid, plan.enabled);
+        const item = items[idx];
+        if (item && !item._divider) this._togglePlan(item.pid, item.enabled);
       });
     });
 
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(btn => {
       btn.addEventListener("click", () => {
         const idx = parseInt(btn.dataset.delete);
-        const plan = this._getPlans()[idx];
-        if (plan && confirm(`Delete ${plan.name}?`)) this._deletePlan(plan.pid);
+        const item = items[idx];
+        if (item && !item._divider && confirm(`Delete ${item.name}?`)) this._deletePlan(item.pid);
       });
+    });
+
+    this.shadowRoot.querySelectorAll("[data-edit-divider]").forEach(el => {
+      el.addEventListener("click", () => this._editDivider(parseInt(el.dataset.editDivider)));
+    });
+    this.shadowRoot.querySelectorAll("[data-remove-divider]").forEach(btn => {
+      btn.addEventListener("click", () => this._removeDivider(parseInt(btn.dataset.removeDivider)));
+    });
+
+    // Drag-and-drop reordering (plans and dividers)
+    const draggableEls = this.shadowRoot.querySelectorAll("[draggable][data-item-idx]");
+    draggableEls.forEach(el => {
+      el.addEventListener("dragstart", e => {
+        this._dragSrcIdx = parseInt(el.dataset.itemIdx);
+        el.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      el.addEventListener("dragend", () => {
+        el.classList.remove("dragging");
+        draggableEls.forEach(p => p.classList.remove("drag-over"));
+        this._dragSrcIdx = null;
+      });
+      el.addEventListener("dragover", e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        draggableEls.forEach(p => p.classList.remove("drag-over"));
+        const targetIdx = parseInt(el.dataset.itemIdx);
+        if (targetIdx !== this._dragSrcIdx) el.classList.add("drag-over");
+      });
+      el.addEventListener("dragleave", () => {
+        el.classList.remove("drag-over");
+      });
+      el.addEventListener("drop", e => {
+        e.preventDefault();
+        const fromIdx = this._dragSrcIdx;
+        const toIdx = parseInt(el.dataset.itemIdx);
+        if (fromIdx !== null && fromIdx !== toIdx) {
+          const reordered = [...items];
+          const [moved] = reordered.splice(fromIdx, 1);
+          reordered.splice(toIdx, 0, moved);
+          this._saveCurrentOrder(reordered);
+          this._render();
+        }
+      });
+    });
+
+    // Touch reordering for mobile / HA app
+    const findDropTarget = (touchY) => {
+      let closest = null;
+      let closestDist = Infinity;
+      draggableEls.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const dist = Math.abs(touchY - mid);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = el;
+        }
+      });
+      return closest;
+    };
+
+    const touchCleanup = () => {
+      this._dragSrcIdx = null;
+      this._touchTargetIdx = null;
+      draggableEls.forEach(p => { p.classList.remove("drag-over"); p.classList.remove("dragging"); });
+    };
+
+    this.shadowRoot.querySelectorAll(".drag-handle").forEach(handle => {
+      const onMove = e => {
+        if (this._dragSrcIdx === null) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        draggableEls.forEach(p => p.classList.remove("drag-over"));
+        const targetEl = findDropTarget(touch.clientY);
+        if (targetEl) {
+          const targetIdx = parseInt(targetEl.dataset.itemIdx);
+          if (targetIdx !== this._dragSrcIdx) targetEl.classList.add("drag-over");
+          this._touchTargetIdx = targetIdx;
+        }
+      };
+
+      const onEnd = () => {
+        const fromIdx = this._dragSrcIdx;
+        const toIdx = this._touchTargetIdx;
+        touchCleanup();
+        document.removeEventListener("touchmove", onMove);
+        document.removeEventListener("touchend", onEnd);
+        document.removeEventListener("touchcancel", onEnd);
+        if (fromIdx !== null && toIdx !== null && toIdx !== undefined && fromIdx !== toIdx) {
+          const reordered = [...items];
+          const [moved] = reordered.splice(fromIdx, 1);
+          reordered.splice(toIdx, 0, moved);
+          this._saveCurrentOrder(reordered);
+          this._render();
+        }
+      };
+
+      handle.addEventListener("touchstart", e => {
+        e.preventDefault();
+        const el = handle.closest("[data-item-idx]");
+        if (!el) return;
+        this._dragSrcIdx = parseInt(el.dataset.itemIdx);
+        this._touchTargetIdx = null;
+        el.classList.add("dragging");
+        document.addEventListener("touchmove", onMove, { passive: false });
+        document.addEventListener("touchend", onEnd);
+        document.addEventListener("touchcancel", onEnd);
+      }, { passive: false });
     });
 
     // Form events
