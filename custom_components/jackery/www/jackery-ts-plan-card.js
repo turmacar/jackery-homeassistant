@@ -1,5 +1,5 @@
 /**
- * Jackery Plan Card — Custom Lovelace card for managing
+ * Jackery Transfer Switch Plan Card — Custom Lovelace card for managing
  * charge/discharge plans on the Jackery Smart Transfer Switch.
  *
  * Reads plan data from a sensor entity's attributes and provides
@@ -218,29 +218,29 @@ class JackeryPlanCard extends HTMLElement {
 
   async _togglePlan(pid, currentlyEnabled) {
     try {
-      console.log("[jackery-plan-card] toggle", pid, !currentlyEnabled);
+      console.log("[jackery-ts-plan-card] toggle", pid, !currentlyEnabled);
       await this._hass.callService("jackery", "update_plan", {
         plan_id: pid,
         enabled: !currentlyEnabled,
       });
-      console.log("[jackery-plan-card] toggle success");
-    } catch(e) { console.error("[jackery-plan-card] toggle error", e); }
+      console.log("[jackery-ts-plan-card] toggle success");
+    } catch(e) { console.error("[jackery-ts-plan-card] toggle error", e); }
   }
 
   async _deletePlan(pid) {
     try {
-      console.log("[jackery-plan-card] delete", pid);
+      console.log("[jackery-ts-plan-card] delete", pid);
       await this._hass.callService("jackery", "delete_plan", {
         plan_id: pid,
       });
-      console.log("[jackery-plan-card] delete success");
-    } catch(e) { console.error("[jackery-plan-card] delete error", e); }
+      console.log("[jackery-ts-plan-card] delete success");
+    } catch(e) { console.error("[jackery-ts-plan-card] delete error", e); }
   }
 
   async _createPlan() {
     const f = this._formData;
     try {
-      console.log("[jackery-plan-card] create", f);
+      console.log("[jackery-ts-plan-card] create", f);
       await this._hass.callService("jackery", "create_plan", {
         type: parseInt(f.type),
         start_time: f.start_time,
@@ -248,8 +248,8 @@ class JackeryPlanCard extends HTMLElement {
         days: f.days,
         enabled: true,
       });
-      console.log("[jackery-plan-card] create success");
-    } catch(e) { console.error("[jackery-plan-card] create error", e); }
+      console.log("[jackery-ts-plan-card] create success");
+    } catch(e) { console.error("[jackery-ts-plan-card] create error", e); }
     this._showForm = false;
     this._render();
   }
@@ -793,11 +793,11 @@ class JackeryPlanCard extends HTMLElement {
   }
 }
 
-customElements.define("jackery-plan-card", JackeryPlanCard);
+customElements.define("jackery-ts-plan-card", JackeryPlanCard);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "jackery-plan-card",
-  name: "Jackery Plan Card",
+  type: "jackery-ts-plan-card",
+  name: "Jackery Transfer Switch Plan Card",
   description: "Manage charge/discharge plans for the Jackery Smart Transfer Switch",
 });

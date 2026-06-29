@@ -1,4 +1,4 @@
-> I have a full time job and can't respond to issues, but I'm open to contributions! If you submit a reasonable pull request, I will review, respond, test, and merge if it looks good. Thank you for understanding!
+> This is a community-maintained project. Issue responses may be slow, but pull requests are welcome! Reasonable PRs will be reviewed, tested, and merged. Thank you for contributing!
 
 > **Known issue:** This integration currently does not support accounts registered in the EU.
 
@@ -6,7 +6,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![maintainer](https://img.shields.io/badge/maintainer-%40theak-blue.svg)](https://github.com/theak)
-[![version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/theak/jackery-homeassistant)
+[![version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/theak/jackery-homeassistant)
 
 Custom Home Assistant integration for monitoring and controlling Jackery portable power stations. This integration provides real-time sensor data for your Jackery devices along with writable controls for supported settings and charging plans on supported Jackery Plus models.
 
@@ -20,6 +20,8 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 - 📅 **Charging Plans**: Charging-plan switch, time window, and repeat schedule for supported Jackery Plus devices
 - 🏠 **Smart Transfer Switch**: Grid/Station toggle, UPS mode, force charge, working mode, backup reserve, circuit control, fault diagnostics, and scheduled plan management
 - ⚡ **Circuit Monitoring**: Per-circuit power sensors and on/off switches with automatic split-phase pair combining
+- 🃏 **Plan Management Card**: Custom Lovelace card for viewing, creating, toggling, and deleting Transfer Switch charge/discharge plans
+- 🔧 **HA Services**: `jackery.create_plan`, `jackery.update_plan`, and `jackery.delete_plan` for automation-driven Transfer Switch plan management
 
 ## Supported Sensors
 
@@ -142,18 +144,80 @@ The integration creates writable entities only when the corresponding properties
 |--------------------|-----------------------------------------------------|----------------|
 | Charging Plan Time | Charging plan time window for supported devices     | `HH:mm-HH:mm`  |
 
+## Services
+
+The integration registers Home Assistant services for managing Transfer Switch charge/discharge plans. These services do not apply to portable device charging plans. They can be called from automations, scripts, or the Developer Tools.
+
+| Service | Description |
+|---------|-------------|
+| `jackery.create_plan` | Create a new Transfer Switch charge or discharge plan |
+| `jackery.update_plan` | Update an existing Transfer Switch plan |
+| `jackery.delete_plan` | Delete a Transfer Switch plan by its ID |
+
+### `jackery.create_plan`
+
+| Field | Required | Description | Example |
+|-------|----------|-------------|---------|
+| `type` | Yes | `1` = Charge, `2` = Discharge | `2` |
+| `start_time` | Yes | Start time (`HH:MM`) | `"14:00"` |
+| `end_time` | Yes | End time (`HH:MM`) | `"19:00"` |
+| `days` | Yes | 7-char day mask Mon–Sun | `"1111100"` (weekdays) |
+| `enabled` | No | Start enabled (default: `true`) | `true` |
+
+### `jackery.update_plan`
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `plan_id` | Yes | The plan ID (`pid`) to update |
+| `type` | No | `1` = Charge, `2` = Discharge |
+| `start_time` | No | Start time (`HH:MM`) |
+| `end_time` | No | End time (`HH:MM`) |
+| `days` | No | 7-char day mask Mon–Sun |
+| `enabled` | No | Enable or disable the plan |
+
+### `jackery.delete_plan`
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `plan_id` | Yes | The plan ID (`pid`) to delete |
+
+## Transfer Switch Plan Management Card
+
+The integration includes a custom Lovelace card (`jackery-ts-plan-card`) for managing Transfer Switch charge/discharge plans directly from a dashboard. ( Battery Charge plans need a separate item. )
+
+### Card Installation
+
+1. The card JS file is installed automatically with the integration at `custom_components/jackery/www/jackery-ts-plan-card.js`
+2. Add it as a Lovelace resource:
+   - Go to **Settings** → **Dashboards** → **⋮** (three dots) → **Resources**
+   - Add `/hacsfiles/jackery/jackery-ts-plan-card.js` (HACS) or `/local/community/jackery/jackery-ts-plan-card.js` as a JavaScript Module
+3. Add the card to a dashboard:
+
+```yaml
+type: custom:jackery-ts-plan-card
+```
+
+The card auto-discovers the Transfer Switch scheduled plans sensor. It provides:
+- View all charge/discharge plans with day schedules
+- Create new plans with type, time window, and day selection
+- Toggle individual plans on/off
+- Delete plans
+- Drag-to-reorder plan display
+- Create dividers labels
+- Lock mode to prevent accidental changes
+
 ## Device-Specific Availability
 
 - Entities are created only when the Jackery API reports the underlying key for that device.
-- Charging plans are not available for devices connected to a Smart Transfer Switch.
-- Scheduled plan entities (plan sensor and per-plan toggle switches) appear only for the Smart Transfer Switch.
+- Scheduled Plan entities (plan sensor and per-plan toggle switches) appear only for the Smart Transfer Switch.
 - Fault diagnostic entities are created when the device reports an `fz` sub-object. Multi-state faults show human-readable labels; binary faults show Problem/OK.
-- AC1/AC2 battery slot sensors appear when the Transfer Switch reports `ac1`/`ac2` sub-objects. Battery pack count sensors include per-pack serial number and battery level attributes. Add-on packs take time to populate after being plugged in.
+- AC1/AC2 battery slot sensors appear when the Transfer Switch reports `ac1`/`ac2` sub-objects. Battery pack count sensors include per-pack serial number and battery level attributes. Add-on packs take time (~24h+) to populate after being plugged in.
 - Circuit entities (power sensors and on/off switches) appear for Transfer Switch devices. Split-phase pairs are automatically combined into single entities.
 - `Charging Plan` appears when the device reports DP `107`.
 - `Charging Plan Time` and `Charging Plan Repeat` appear when the device reports DP `108`.
 - Devices that split DC control into `odcu` and `odcc` will not show the combined `DC Output` entity.
 - `Charging Plan Time` and `Charging Plan Repeat` become unavailable if the reported DP `108` payload is missing or malformed.
+- Individual device `Charging Plan` entities are not available for devices connected to a Smart Transfer Switch.
 
 ## Installation
 
@@ -166,7 +230,7 @@ The integration creates writable entities only when the corresponding properties
 
 HACS installs published version tags from GitHub releases. This repository now publishes a matching GitHub release automatically whenever a semantic version tag is pushed.
 
-If you need fixes that have not been published as a new GitHub release yet, HACS can also install the repository's default branch. This keeps branch installs available even while the latest published release remains `1.0.4`.
+If you need fixes that have not been published as a new GitHub release yet, HACS can also install the repository's default branch. This keeps branch installs available even while the latest published release remains `1.1.1`.
 
 ### Option 2: Manual Installation
 
