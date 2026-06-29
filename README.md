@@ -187,15 +187,30 @@ The card repository is separated for independent installation:
 
 **[jackery-lovelace-cards](https://github.com/turmacar/jackery-lovelace-cards)**
 
-### Transfer Switch Plan Management card
-This card auto-discovers the Transfer Switch scheduled plans sensor. It provides:
+All cards attempt to auto-discover entities and accept an optional `entity` config override.
+
+### Transfer Switch Plan Management Card
 - View all charge/discharge plans with day schedules
 - Create new plans with type, time window, and day selection
 - Toggle individual plans on/off
+- Toggle individual days on/off per plan
 - Delete plans
 - Drag-to-reorder plan display
 - Create divider labels
 - Lock mode to prevent accidental changes
+
+### Circuit Panel Card
+- Two-bank layout (Bank A / Bank B) matching physical breaker panel
+- Combined split-phase (240V) circuits displayed as double-height breakers
+- Real-time power monitoring with color-coded levels and progress bars
+- Lock/unlock circuit controls (default: locked)- Responsive: stacks banks vertically in narrow columns
+
+### Schedule Heatmap Card
+- Half-hour grid colored by plan type
+- Overlapping plans shown with striped pattern
+- Current time marker
+- Schedule overlays (e.g. peak/off-peak) from HA schedule helpers
+- Populates schedules by season via an `input_select` entity
 
 ## Device-Specific Availability
 
