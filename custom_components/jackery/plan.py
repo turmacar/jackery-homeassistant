@@ -150,6 +150,7 @@ class JackeryPlanSensor(CoordinatorEntity, SensorEntity):
             attrs[f"{prefix}_start"] = plan.get("st", "")
             attrs[f"{prefix}_end"] = plan.get("et", "")
             attrs[f"{prefix}_days"] = _format_day_mask(plan.get("lps", "0000000"))
+            attrs[f"{prefix}_day_mask"] = plan.get("lps", "0000000")
             attrs[f"{prefix}_pid"] = plan.get("pid", "")
         attrs["plan_count"] = len(plans)
         return attrs

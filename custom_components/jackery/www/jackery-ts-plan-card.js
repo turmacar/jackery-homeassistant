@@ -67,6 +67,7 @@ class JackeryPlanCard extends HTMLElement {
         start: attrs[`plan_${i}_start`] || "",
         end: attrs[`plan_${i}_end`] || "",
         days: attrs[`plan_${i}_days`] || "",
+        day_mask: attrs[`plan_${i}_day_mask`] || "0000000",
       });
     }
     return plans;
@@ -196,24 +197,29 @@ class JackeryPlanCard extends HTMLElement {
     `;
   }
 
-  _renderDayChips(daysLabel) {
-    // daysLabel is like "Mon, Tue, Wed" or "Daily" or "Weekdays"
-    const activeDays = new Set();
-    if (daysLabel === "Daily") {
-      DAY_NAMES.forEach((_, i) => activeDays.add(i));
-    } else if (daysLabel === "Weekdays") {
-      [0, 1, 2, 3, 4].forEach(i => activeDays.add(i));
-    } else if (daysLabel === "Weekends") {
-      [5, 6].forEach(i => activeDays.add(i));
-    } else {
-      daysLabel.split(",").map(s => s.trim()).forEach(name => {
-        const idx = DAY_NAMES.indexOf(name);
-        if (idx >= 0) activeDays.add(idx);
-      });
-    }
+  _renderDayChips(item, itemIdx) {
+    const mask = item.day_mask || "0000000";
+    const clickable = this._locked && !item._divider;
     return DAY_LABELS.map((label, i) =>
-      `<span class="day-chip ${activeDays.has(i) ? "active" : ""}">${label}</span>`
+      `<span class="day-chip ${mask[i] === "1" ? "active" : ""}${clickable ? " clickable" : ""}" ${clickable ? `data-day-toggle="${itemIdx}-${i}"` : ""}>${label}</span>`
     ).join("");
+  }
+
+  async _toggleDay(itemIdx, dayIdx) {
+    const items = this._getItems();
+    const item = items[itemIdx];
+    if (!item || item._divider) return;
+    const mask = (item.day_mask || "0000000").split("");
+    mask[dayIdx] = mask[dayIdx] === "1" ? "0" : "1";
+    const newMask = mask.join("");
+    try {
+      console.log("[jackery-ts-plan-card] toggle day", item.pid, dayIdx, newMask);
+      await this._hass.callService("jackery", "update_plan", {
+        plan_id: item.pid,
+        days: newMask,
+      });
+      console.log("[jackery-ts-plan-card] toggle day success");
+    } catch(e) { console.error("[jackery-ts-plan-card] toggle day error", e); }
   }
 
   async _togglePlan(pid, currentlyEnabled) {
@@ -394,6 +400,12 @@ class JackeryPlanCard extends HTMLElement {
         .day-chip.active {
           background: var(--primary-color, #03a9f4);
           color: var(--text-primary-color, #fff);
+        }
+        .day-chip.clickable {
+          cursor: pointer;
+        }
+        .day-chip.clickable:hover {
+          opacity: 0.75;
         }
         .no-plans {
           text-align: center;
@@ -576,7 +588,7 @@ class JackeryPlanCard extends HTMLElement {
                 </div>
               </div>
               ${this._renderTimebar(item)}
-              <div class="day-chips">${this._renderDayChips(item.days)}</div>
+              <div class="day-chips">${this._renderDayChips(item, i)}</div>
             </div>
           `).join("")
         }
@@ -618,6 +630,12 @@ class JackeryPlanCard extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll("[data-remove-divider]").forEach(btn => {
       btn.addEventListener("click", () => this._removeDivider(parseInt(btn.dataset.removeDivider)));
+    });
+    this.shadowRoot.querySelectorAll("[data-day-toggle]").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const [itemIdx, dayIdx] = chip.dataset.dayToggle.split("-").map(Number);
+        this._toggleDay(itemIdx, dayIdx);
+      });
     });
 
     // Drag-and-drop reordering (plans and dividers)
