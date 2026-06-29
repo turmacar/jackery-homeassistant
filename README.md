@@ -20,7 +20,7 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 - 📅 **Charging Plans**: Charging-plan switch, time window, and repeat schedule for supported Jackery Plus devices
 - 🏠 **Smart Transfer Switch**: Grid/Station toggle, UPS mode, force charge, working mode, backup reserve, circuit control, fault diagnostics, and scheduled plan management
 - ⚡ **Circuit Monitoring**: Per-circuit power sensors and on/off switches with automatic split-phase pair combining
-- 🃏 **Plan Management Card**: Custom Lovelace card for viewing, creating, toggling, and deleting Transfer Switch charge/discharge plans
+- 🃏 **Lovelace Cards**: Custom Lovelace cards for easier configuration and management of certain entities.
 - 🔧 **HA Services**: `jackery.create_plan`, `jackery.update_plan`, and `jackery.delete_plan` for automation-driven Transfer Switch plan management
 
 ## Supported Sensors
@@ -181,29 +181,20 @@ The integration registers Home Assistant services for managing Transfer Switch c
 |-------|----------|-------------|
 | `plan_id` | Yes | The plan ID (`pid`) to delete |
 
-## Transfer Switch Plan Management Card
+## Lovelace Cards
 
-The integration includes a custom Lovelace card (`jackery-ts-plan-card`) for managing Transfer Switch charge/discharge plans directly from a dashboard. ( Battery Charge plans need a separate item. )
+The card repository is separated for independent installation:
 
-### Card Installation
+**[jackery-lovelace-cards](https://github.com/turmacar/jackery-lovelace-cards)**
 
-1. The card JS file is installed automatically with the integration at `custom_components/jackery/www/jackery-ts-plan-card.js`
-2. Add it as a Lovelace resource:
-   - Go to **Settings** → **Dashboards** → **⋮** (three dots) → **Resources**
-   - Add `/hacsfiles/jackery/jackery-ts-plan-card.js` (HACS) or `/local/community/jackery/jackery-ts-plan-card.js` as a JavaScript Module
-3. Add the card to a dashboard:
-
-```yaml
-type: custom:jackery-ts-plan-card
-```
-
-The card auto-discovers the Transfer Switch scheduled plans sensor. It provides:
+### Transfer Switch Plan Management card
+This card auto-discovers the Transfer Switch scheduled plans sensor. It provides:
 - View all charge/discharge plans with day schedules
 - Create new plans with type, time window, and day selection
 - Toggle individual plans on/off
 - Delete plans
 - Drag-to-reorder plan display
-- Create dividers labels
+- Create divider labels
 - Lock mode to prevent accidental changes
 
 ## Device-Specific Availability
