@@ -330,6 +330,52 @@ class AsyncSetupEntryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(raw_properties, {"rb": 42, "ip": 15, "oac": 1})
 
+    async def test_coordinator_keeps_last_known_data_on_transient_http_failure(
+        self,
+    ) -> None:
+        """A transient HTTP failure should reuse the last good payload."""
+        hass = self._make_hass()
+        entry = self._make_entry()
+        api.JackeryAPI.device_list_result = {
+            "data": [{"devId": "device-1", "devName": "Explorer 240"}]
+        }
+        api.JackeryAPI.device_detail_results = {
+            "device-1": {"data": {"properties": {"rb": 42, "ip": 15, "oac": 1}}}
+        }
+
+        await integration.async_setup_entry(hass, entry)
+        coordinator = hass.data["jackery"][entry.entry_id]["coordinators"]["device-1"]
+
+        # Next poll fails at the HTTP layer.
+        api.JackeryAPI.device_detail_error = ConnectionError("dns blip")
+        refreshed = await coordinator.update_method()
+
+        # Entities keep their last-known values instead of going unavailable.
+        self.assertEqual(refreshed["rb"], 42)
+        self.assertEqual(refreshed["ip"], 15)
+        self.assertEqual(refreshed["oac"], 1)
+
+    async def test_coordinator_raises_after_persistent_http_failures(self) -> None:
+        """Once the failure streak exceeds the tolerance, refresh should fail."""
+        hass = self._make_hass()
+        entry = self._make_entry()
+        api.JackeryAPI.device_list_result = {
+            "data": [{"devId": "device-1", "devName": "Explorer 240"}]
+        }
+        api.JackeryAPI.device_detail_results = {
+            "device-1": {"data": {"properties": {"rb": 42}}}
+        }
+
+        await integration.async_setup_entry(hass, entry)
+        coordinator = hass.data["jackery"][entry.entry_id]["coordinators"]["device-1"]
+
+        api.JackeryAPI.device_detail_error = ConnectionError("outage")
+        # Tolerate up to MAX_HTTP_FAILURES misses, then raise UpdateFailed.
+        for _ in range(15):
+            await coordinator.update_method()
+        with self.assertRaises(integration.UpdateFailed):
+            await coordinator.update_method()
+
     async def test_setup_entry_raises_auth_failed_when_first_refresh_auth_fails(
         self,
     ) -> None:

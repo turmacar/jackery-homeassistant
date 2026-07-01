@@ -72,10 +72,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # coordinator update so plan entities always have data.
         plan_cache: dict[str, list[dict]] = {"plans": []}
         circuit_cache: dict[str, list[dict]] = {"circuits": []}
+
+        # A DNS/HTTP blip should keep entities available (showing last values)
+        # instead of greying out the whole device on a single failed poll.
+        properties_cache: dict[str, dict] = {"properties": {}}
+        last_success_time: list = [None]
+        http_failure_streak = [0]
         plan_poll_counter = [0]
         circuit_poll_counter = [0]
         PLAN_QUERY_EVERY_N = 5  # query plans every Nth poll (~5 min at 60s)
         CIRCUIT_QUERY_EVERY_N = 3  # query circuits every Nth poll (~3 min)
+        MAX_HTTP_FAILURES = 15  # tolerate ~15 min of blips before going unavailable
 
         async def _async_update_data(
             api_client=api,
@@ -86,15 +93,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _cir_counter=circuit_poll_counter,
             _plan_cache=plan_cache,
             _circuit_cache=circuit_cache,
+            _props_cache=properties_cache,
+            _last_success=last_success_time,
+            _failures=http_failure_streak,
         ):
-            """Fetch data from API endpoint."""
+            """Fetch data from API endpoint.
+
+            On a HTTP failure, fall back to the last successful
+            properties payload (up to MAX_HTTP_FAILURES consecutive misses) so
+            entities stay available with their last-known values rather than all
+            going unavailable on a single blip.
+            """
+            stale = False
             try:
                 data = await asyncio.wait_for(
                     hass.async_add_executor_job(api_client.get_device_detail, dev_id),
                     timeout=10,
                 )
                 properties = dict(data.get("data", {}).get("properties", {}))
-                if is_box:
+                # Cache a copy of the raw payload for fallback reuse.
+                _props_cache["properties"] = dict(properties)
+                _last_success[0] = dt_util.now()
+                _failures[0] = 0
+            except JackeryAuthenticationError as err:
+                raise ConfigEntryAuthFailed(
+                    f"Authentication failed while refreshing Jackery device {dev_id}: {err}"
+                ) from err
+            except Exception as err:
+                _failures[0] += 1
+                if _props_cache["properties"] and _failures[0] <= MAX_HTTP_FAILURES:
+                    _LOGGER.warning(
+                        "HTTP refresh failed for %s (%d/%d), using last-known data: %s",
+                        dev_id,
+                        _failures[0],
+                        MAX_HTTP_FAILURES,
+                        err,
+                    )
+                    properties = dict(_props_cache["properties"])
+                    stale = True
+                else:
+                    raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+            if is_box:
+                # Skip live MQTT queries while the HTTP path is failing The
+                # cached plans/circuits are still injected below.
+                if not stale:
                     _counter[0] += 1
                     if _counter[0] >= PLAN_QUERY_EVERY_N:
                         _counter[0] = 0
@@ -108,8 +151,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 "Plan query failed for %s, keeping cached data",
                                 dev_sn,
                             )
-                    # Always inject cached plans into properties
-                    properties["_plans"] = _plan_cache["plans"]
 
                     _cir_counter[0] += 1
                     if _cir_counter[0] >= CIRCUIT_QUERY_EVERY_N:
@@ -123,37 +164,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 "Circuit query failed for %s, keeping cached data",
                                 dev_sn,
                             )
-                    # Always inject cached circuits into properties
-                    properties["_circuits"] = _circuit_cache["circuits"]
-                # Flatten nested fault dict so sensors can access
-                # individual fault fields as top-level keys (fz_gs, fz_ol, etc.)
-                fz = properties.get("fz")
-                if isinstance(fz, dict):
-                    for fk, fv in fz.items():
-                        properties[f"fz_{fk}"] = fv
+                # Always inject cached plans/circuits so entities keep their data
+                properties["_plans"] = _plan_cache["plans"]
+                properties["_circuits"] = _circuit_cache["circuits"]
 
-                # Flatten nested battery slot dicts (ac1, ac2) so sensors
-                # can access them as ac1_rb, ac1_op, ac2_rb, etc.
-                for slot in ("ac1", "ac2"):
-                    ac = properties.get(slot)
-                    if isinstance(ac, dict):
-                        for ak, av in ac.items():
-                            if not isinstance(av, (dict, list)):
-                                properties[f"{slot}_{ak}"] = av
-                        # Battery pack list: store count and raw list
-                        bp = ac.get("bp")
-                        if isinstance(bp, list):
-                            properties[f"{slot}_bp_count"] = len(bp)
-                            properties[f"{slot}_bp"] = bp
+            # Flatten nested fault dict so sensors can access
+            # individual fault fields as top-level keys (fz_gs, fz_ol, etc.)
+            fz = properties.get("fz")
+            if isinstance(fz, dict):
+                for fk, fv in fz.items():
+                    properties[f"fz_{fk}"] = fv
 
-                properties["last_updated"] = dt_util.now()
-                return properties
-            except JackeryAuthenticationError as err:
-                raise ConfigEntryAuthFailed(
-                    f"Authentication failed while refreshing Jackery device {dev_id}: {err}"
-                ) from err
-            except Exception as err:
-                raise UpdateFailed(f"Error communicating with API: {err}") from err
+            # Flatten nested battery slot dicts (ac1, ac2) so sensors
+            # can access them as ac1_rb, ac1_op, ac2_rb, etc.
+            for slot in ("ac1", "ac2"):
+                ac = properties.get(slot)
+                if isinstance(ac, dict):
+                    for ak, av in ac.items():
+                        if not isinstance(av, (dict, list)):
+                            properties[f"{slot}_{ak}"] = av
+                    # Battery pack list: store count and raw list
+                    bp = ac.get("bp")
+                    if isinstance(bp, list):
+                        properties[f"{slot}_bp_count"] = len(bp)
+                        properties[f"{slot}_bp"] = bp
+
+            # last_updated reflects the last *successful* HTTP fetch so a stale
+            # fallback is timestamped for the UI.
+            properties["last_updated"] = _last_success[0] or dt_util.now()
+            return properties
 
         # Pre-seed plan and circuit caches before first coordinator refresh
         # so entities are created on the initial setup pass.
