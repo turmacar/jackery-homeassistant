@@ -183,11 +183,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     for ak, av in ac.items():
                         if not isinstance(av, (dict, list)):
                             properties[f"{slot}_{ak}"] = av
-                    # Battery pack list: store count and raw list
+                    # Battery pack list: store count, raw list, and per-pack rb/sn
                     bp = ac.get("bp")
                     if isinstance(bp, list):
                         properties[f"{slot}_bp_count"] = len(bp)
                         properties[f"{slot}_bp"] = bp
+                        for i, pack in enumerate(bp):
+                            pack_num = i + 1
+                            properties[f"{slot}_pack_{pack_num}_rb"] = pack.get("rb")
+                            properties[f"{slot}_pack_{pack_num}_sn"] = pack.get("sn", "")
 
             # last_updated reflects the last *successful* HTTP fetch so a stale
             # fallback is timestamped for the UI.

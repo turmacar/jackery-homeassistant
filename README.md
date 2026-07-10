@@ -66,6 +66,7 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | AC1 Battery Status         | Battery state of AC1 (Transfer Switch)                                | text     |
 | AC1 Connected              | Whether a battery device is connected to AC1 (Transfer Switch)        | Yes/No   |
 | AC1 Battery Packs          | Number of add-on battery packs on AC1 (Transfer Switch)               | integer  |
+| AC1 Pack *N* Battery       | Battery level of add-on pack N on AC1 (Transfer Switch, up to 5)      | %        |
 | AC2 Battery Level          | Battery level of device connected to AC2 (Transfer Switch)            | %        |
 | AC2 Output Power           | Output power from AC2  (Transfer Switch)                              | W        |
 | AC2 Input Power            | Input power to AC2  (Transfer Switch)                                 | W        |
@@ -74,6 +75,7 @@ Custom Home Assistant integration for monitoring and controlling Jackery portabl
 | AC2 Battery Status         | Battery state of AC2  (Transfer Switch)                               | text     |
 | AC2 Connected              | Whether a battery device is connected to AC2 (Transfer Switch)        | Yes/No   |
 | AC2 Battery Packs          | Number of add-on battery packs on AC2  (Transfer Switch)              | integer  |
+| AC2 Pack *N* Battery       | Battery level of add-on pack N on AC2 (Transfer Switch, up to 5)      | %        |
 
 ### Binary Sensors (ON/OFF)
 

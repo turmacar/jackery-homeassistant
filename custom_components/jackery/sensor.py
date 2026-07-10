@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from homeassistant.components.sensor import (
     SensorEntity,
 )
@@ -163,4 +164,11 @@ class JackerySensor(CoordinatorEntity, SensorEntity):
                     prefix = f"pack_{i + 1}"
                     attrs[f"{prefix}_sn"] = pack.get("sn", "")
                     attrs[f"{prefix}_battery"] = pack.get("rb")
+        # For per-pack battery sensors, expose the pack serial number
+        m = re.match(r"^(ac[12])_pack_(\d+)_rb$", key)
+        if m:
+            slot, pack_num = m.group(1), m.group(2)
+            sn = self.coordinator.data.get(f"{slot}_pack_{pack_num}_sn")
+            if sn:
+                attrs["serial_number"] = sn
         return attrs or None

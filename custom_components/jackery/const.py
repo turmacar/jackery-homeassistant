@@ -87,6 +87,7 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac2_bs": "Battery state of the device connected to AC2.",
     "ac2_bi": "Whether a battery device is connected to AC2.",
     "ac2_bp_count": "Number of add-on battery packs connected to the AC2 device.",
+    **{f"{slot}_pack_{i}_rb": f"Battery level of add-on pack {i} connected to {slot.upper()}." for slot in ("ac1", "ac2") for i in range(1, 6)},
     # Explorer 5000 diagnostic sensors
     "ss": "Solar panel input type: None, High Voltage, Low Voltage, or both.",
     "pc": "Parallel connection mode: None, Charge, or Discharge.",
@@ -536,6 +537,19 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # Per-pack battery level sensors (up to 5 packs per slot)
+    *[
+        JackerySensorEntityDescription(
+            key=f"{slot}_pack_{i}_rb",
+            name=f"{slot.upper()} Pack {i} Battery",
+            native_unit_of_measurement=PERCENTAGE,
+            device_class=SensorDeviceClass.BATTERY,
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+        for slot in ("ac1", "ac2")
+        for i in range(1, 6)
+    ],
 )
 
 # Binary sensor descriptions
