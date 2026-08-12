@@ -157,7 +157,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _cir_counter[0] = 0
                         try:
                             circuits = await api_client.async_query_transfer_switch_circuits(dev_sn)
-                            if circuits:
+                            # Only replace cache with a full metadata response.
+                            # Partial actionId=1 pushes lack "nm" and must not overwrite.
+                            if circuits and "nm" in circuits[0]:
                                 _circuit_cache["circuits"] = circuits
                         except Exception:
                             _LOGGER.debug(

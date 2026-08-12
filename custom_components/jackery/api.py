@@ -198,12 +198,12 @@ class JackeryAPI:
             data = response.json()
             _LOGGER.debug("API response data: %s", data)
 
-            # Check for expired token (code=10402)
-            if data.get("code") == 10402:
-                _LOGGER.info("Token expired. Re-logging in...")
+            # 10402 = token expired; 10403 = session displaced by another login
+            if data.get("code") in (10402, 10403):
+                _LOGGER.info("Re-logging in (code=%s)...", data.get("code"))
                 if not self.login():
                     raise JackeryAuthenticationError(
-                        "Failed to re-login after token expired."
+                        "Failed to re-login after session invalidated."
                     )
                 # Retry the request with the new token
                 headers["token"] = self._token
@@ -598,8 +598,11 @@ class JackeryAPI:
                                 data = json.loads(message.payload)
                             except (json.JSONDecodeError, TypeError):
                                 continue
+                            # actionId=7 is the QueryCircuitProperty response (full metadata).
+                            # actionId=1 are unsolicited partial power-only pushes — ignore them.
                             if (
                                 data.get("deviceSn") == device_sn
+                                and data.get("actionId") == 7
                                 and isinstance(data.get("body"), dict)
                                 and "cir" in data["body"]
                             ):
