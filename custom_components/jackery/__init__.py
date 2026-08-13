@@ -160,7 +160,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             # Only replace cache with a full metadata response.
                             # Partial actionId=1 pushes lack "nm" and must not overwrite.
                             if circuits and "nm" in circuits[0]:
+                                _LOGGER.debug(
+                                    "Circuit cache updated with %d circuits for %s",
+                                    len(circuits), dev_sn,
+                                )
                                 _circuit_cache["circuits"] = circuits
+                            elif circuits:
+                                _LOGGER.warning(
+                                    "Circuit query for %s returned %d entries with no 'nm' key — nm-guard blocked overwrite (actionId=1 leak?)",
+                                    dev_sn, len(circuits),
+                                )
                         except Exception:
                             _LOGGER.debug(
                                 "Circuit query failed for %s, keeping cached data",
