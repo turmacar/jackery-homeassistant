@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import builtins
 import importlib.util
+import json
 import sys
+import time
 import types
 import unittest
 from pathlib import Path
@@ -328,15 +330,17 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             stop=AsyncMock(),
         )
 
+        mock_client_class = unittest.mock.Mock(side_effect=[failed_client, recovered_client])
         api.socketry = types.SimpleNamespace(
             AuthenticationError=auth_error,
             MqttError=mqtt_error,
             SocketryError=socketry_error,
-            Client=types.SimpleNamespace(
-                login=AsyncMock(side_effect=[failed_client, recovered_client])
-            ),
+            Client=mock_client_class,
         )
         jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_user_id = "test-user"
+        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
+        jackery_api._token = "test-token"
 
         await jackery_api.async_set_device_property(
             "device-1",
@@ -345,12 +349,7 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
-        api.socketry.Client.login.assert_has_awaits(
-            [
-                unittest.mock.call("user@example.com", "password"),
-                unittest.mock.call("user@example.com", "password"),
-            ]
-        )
+        self.assertEqual(mock_client_class.call_count, 2)
         failed_client.fetch_devices.assert_awaited_once()
         recovered_client.fetch_devices.assert_awaited_once()
         failed_client.stop.assert_awaited_once()
@@ -366,17 +365,19 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             stop=AsyncMock(),
         )
 
+        mock_client_class = unittest.mock.Mock(return_value=failed_client)
         api.socketry = types.SimpleNamespace(
-            Client=types.SimpleNamespace(login=AsyncMock(return_value=failed_client))
+            Client=mock_client_class,
         )
         jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_user_id = "test-user"
+        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
+        jackery_api._token = "test-token"
 
         with self.assertRaises(socketry_error):
             await jackery_api._async_get_control_client()
 
-        api.socketry.Client.login.assert_awaited_once_with(
-            "user@example.com", "password"
-        )
+        mock_client_class.assert_called_once()
         failed_client.fetch_devices.assert_awaited_once()
         failed_client.stop.assert_awaited_once()
         self.assertIsNone(jackery_api._control_client)
@@ -390,17 +391,19 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             stop=AsyncMock(),
         )
 
+        mock_client_class = unittest.mock.Mock(return_value=failed_client)
         api.socketry = types.SimpleNamespace(
-            Client=types.SimpleNamespace(login=AsyncMock(return_value=failed_client))
+            Client=mock_client_class,
         )
         jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_user_id = "test-user"
+        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
+        jackery_api._token = "test-token"
 
         with self.assertRaises(asyncio.CancelledError):
             await jackery_api._async_get_control_client()
 
-        api.socketry.Client.login.assert_awaited_once_with(
-            "user@example.com", "password"
-        )
+        mock_client_class.assert_called_once()
         failed_client.fetch_devices.assert_awaited_once()
         failed_client.stop.assert_awaited_once()
         self.assertIsNone(jackery_api._control_client)
@@ -431,15 +434,17 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             stop=AsyncMock(),
         )
 
+        mock_client_class = unittest.mock.Mock(side_effect=[first_client, second_client])
         api.socketry = types.SimpleNamespace(
             AuthenticationError=auth_error,
             MqttError=mqtt_error,
             SocketryError=socketry_error,
-            Client=types.SimpleNamespace(
-                login=AsyncMock(side_effect=[first_client, second_client])
-            ),
+            Client=mock_client_class,
         )
         jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_user_id = "test-user"
+        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
+        jackery_api._token = "test-token"
 
         with self.assertRaises(auth_error):
             await jackery_api.async_set_device_property(
@@ -449,12 +454,7 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
                 1,
             )
 
-        api.socketry.Client.login.assert_has_awaits(
-            [
-                unittest.mock.call("user@example.com", "password"),
-                unittest.mock.call("user@example.com", "password"),
-            ]
-        )
+        self.assertEqual(mock_client_class.call_count, 2)
         first_client.fetch_devices.assert_awaited_once()
         second_client.fetch_devices.assert_awaited_once()
         first_client.stop.assert_awaited_once()
@@ -549,6 +549,416 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
             integration.PLATFORMS,
         )
         self.assertEqual(hass.data["jackery"], {})
+
+    async def test_control_client_never_calls_socketry_login(self) -> None:
+        """Client(creds) must be used directly; Client.login() must never be called.
+
+        socketry.Client.login() performs a full HTTP login that rotates the shared
+        auth token, invalidating HA's HTTP session and causing 10403 cascades on
+        every concurrent poll.  This test will fail if the old login() path is
+        ever reintroduced.
+        """
+        mock_device = types.SimpleNamespace(set_property=AsyncMock())
+        mock_client = types.SimpleNamespace(
+            fetch_devices=AsyncMock(),
+            devices=[{"devId": "device-1", "devSn": "serial-1"}],
+            device=lambda serial: mock_device,
+            stop=AsyncMock(),
+        )
+        mock_login = AsyncMock()
+        mock_client_class = unittest.mock.Mock(return_value=mock_client)
+        mock_client_class.login = mock_login
+
+        api.socketry = types.SimpleNamespace(
+            AuthenticationError=Exception,
+            MqttError=Exception,
+            SocketryError=Exception,
+            Client=mock_client_class,
+        )
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_user_id = "test-user"
+        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
+        jackery_api._token = "test-token"
+
+        await jackery_api.async_set_device_property("device-1", "serial-1", "ac", 1)
+
+        mock_login.assert_not_called()
+
+    async def test_circuit_query_uses_session_and_ignores_actionid_1(self) -> None:
+        """async_query_transfer_switch_circuits must route through the MQTT session
+        and supply a matcher that rejects actionId=1 partial push messages."""
+        device_sn = "test-sn"
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+
+        captured_matcher = [None]
+
+        async def fake_publish_and_wait(payload, matcher, timeout=10.0):
+            captured_matcher[0] = matcher
+            return {
+                "deviceSn": device_sn,
+                "actionId": 7,
+                "body": {"cir": [
+                    {"idx": 1, "nm": "T2ZmaWNl", "pc": 150, "sw": 1, "sph": 0, "pr": 1},
+                    {"idx": 2, "nm": "dGVzdA==", "pc": 0, "sw": 1, "sph": 0, "pr": 0},
+                ]},
+            }
+
+        jackery_api._mqtt_session = types.SimpleNamespace(
+            publish_and_wait=fake_publish_and_wait
+        )
+
+        circuits = await jackery_api.async_query_transfer_switch_circuits(device_sn)
+
+        # Correct full response returned
+        self.assertEqual(len(circuits), 2)
+        self.assertTrue(all("nm" in c for c in circuits))
+
+        # Matcher must reject actionId=1 partial push
+        partial_push = {
+            "deviceSn": device_sn,
+            "actionId": 1,
+            "body": {"cir": [{"idx": 1, "pc": 150}]},
+        }
+        self.assertFalse(captured_matcher[0](partial_push))
+
+        # Matcher must accept actionId=7 full response
+        full_response = {
+            "deviceSn": device_sn,
+            "actionId": 7,
+            "body": {"cir": [{"nm": "T2ZmaWNl"}]},
+        }
+        self.assertTrue(captured_matcher[0](full_response))
+
+
+class MqttSessionTests(unittest.IsolatedAsyncioTestCase):
+    """Validate JackeryMqttSession dispatch, reconnect, and lifecycle."""
+
+    def _make_session(self):
+        """Return a JackeryMqttSession backed by a minimal API stub."""
+        stub_api = types.SimpleNamespace(
+            _build_mqtt_params=unittest.mock.Mock(
+                return_value=({"hostname": "mqtt.test", "port": 8883}, "test-user")
+            ),
+        )
+        return api.JackeryMqttSession(stub_api)
+
+    async def test_dispatch_resolves_pending_future_when_matcher_matches(self) -> None:
+        """_dispatch must resolve the pending future when matcher returns True."""
+        session = self._make_session()
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        session._pending_future = future
+        session._pending_matcher = lambda data: data.get("hit") is True
+
+        session._dispatch(
+            types.SimpleNamespace(payload=json.dumps({"hit": True}).encode())
+        )
+
+        self.assertTrue(future.done())
+        self.assertEqual(future.result()["hit"], True)
+
+    async def test_dispatch_ignores_message_when_matcher_does_not_match(self) -> None:
+        """_dispatch must not resolve the future if matcher returns False."""
+        session = self._make_session()
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        session._pending_future = future
+        session._pending_matcher = lambda data: data.get("hit") is True
+
+        session._dispatch(
+            types.SimpleNamespace(payload=json.dumps({"hit": False}).encode())
+        )
+
+        self.assertFalse(future.done())
+
+    async def test_fail_pending_sets_exception_on_outstanding_future(self) -> None:
+        """_fail_pending must fail any in-flight future and clear state."""
+        session = self._make_session()
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        session._pending_future = future
+        session._pending_matcher = lambda _: True
+        err = RuntimeError("test disconnect")
+
+        session._fail_pending(err)
+
+        self.assertTrue(future.done())
+        self.assertIs(future.exception(), err)
+        self.assertIsNone(session._pending_future)
+        self.assertIsNone(session._pending_matcher)
+
+    async def test_fail_pending_is_noop_when_no_future(self) -> None:
+        """_fail_pending must not raise when no future is outstanding."""
+        session = self._make_session()
+        session._fail_pending(RuntimeError("should not matter"))
+
+    async def test_stop_cancels_loop_task_and_fails_pending(self) -> None:
+        """stop() must cancel the background task and fail any pending future."""
+        session = self._make_session()
+
+        # Patch aiomqtt.Client to block forever so _run_loop stays in the connect attempt
+        async def _block_forever(**kw):
+            await asyncio.sleep(3600)
+
+        class _BlockingCM:
+            async def __aenter__(self):
+                await asyncio.sleep(3600)
+
+            async def __aexit__(self, *a):
+                return False
+
+        original_aiomqtt = api.aiomqtt
+        api.aiomqtt = types.SimpleNamespace(Client=lambda **kw: _BlockingCM())
+        try:
+            await session.start()
+            # Plant a pending future
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
+            session._pending_future = future
+            session._pending_matcher = lambda _: True
+
+            await session.stop()
+
+            self.assertIsNone(session._loop_task)
+            self.assertTrue(future.done())
+        finally:
+            api.aiomqtt = original_aiomqtt
+
+    async def test_session_connects_and_resolves_publish_and_wait(self) -> None:
+        """publish_and_wait must publish and resolve when the session is connected."""
+        session = self._make_session()
+        device_sn = "sn-1"
+        response_data = {"deviceSn": device_sn, "actionId": 7, "body": {"cir": []}}
+
+        published = []
+
+        class _FakeClient:
+            async def publish(self, topic, payload, *, qos=0):
+                published.append(json.loads(payload))
+                # Dispatch the matching response synchronously during publish
+                session._dispatch(
+                    types.SimpleNamespace(payload=json.dumps(response_data).encode())
+                )
+
+        # Set up the session as if fully connected
+        session._client = _FakeClient()
+        session._user_id = "test-user"
+        session._connected.set()
+
+        result = await session.publish_and_wait(
+            {"deviceSn": device_sn, "actionId": 7, "body": {}},
+            matcher=lambda d: d.get("deviceSn") == device_sn and d.get("actionId") == 7,
+            timeout=5.0,
+        )
+
+        self.assertEqual(result["deviceSn"], device_sn)
+        self.assertEqual(len(published), 1)
+
+    async def test_publish_and_wait_raises_on_timeout(self) -> None:
+        """publish_and_wait must raise TimeoutError when no matching response arrives."""
+        session = self._make_session()
+        session._connected.set()
+
+        published = []
+
+        class _FakeClient:
+            async def publish(self, topic, payload, *, qos=0):
+                published.append(payload)
+                # Never dispatch a response - let it time out
+
+        session._client = _FakeClient()
+        session._user_id = "test-user"
+
+        with self.assertRaises(TimeoutError):
+            await session.publish_and_wait(
+                {"deviceSn": "sn", "actionId": 7},
+                matcher=lambda _: False,
+                timeout=0.05,
+            )
+
+        self.assertEqual(len(published), 1)
+
+    async def test_reconnect_delays_double_up_to_cap(self) -> None:
+        """Reconnect delay must double on each failure up to _MAX_RECONNECT_DELAY."""
+        session = self._make_session()
+        self.assertEqual(session._reconnect_delay, 1.0)
+        # Simulate repeated failures
+        for expected in [2.0, 4.0, 8.0, 16.0, 30.0, 30.0]:
+            session._reconnect_delay = min(session._reconnect_delay * 2, session._MAX_RECONNECT_DELAY)
+            self.assertEqual(session._reconnect_delay, expected)
+
+
+class HttpSessionTests(unittest.TestCase):
+    """Validate token-expiry recovery in JackeryAPI._get_request."""
+
+    def setUp(self) -> None:
+        self.original_requests_get = api.requests.get
+
+    def tearDown(self) -> None:
+        api.requests.get = self.original_requests_get
+
+    def _make_response(self, json_data: dict) -> object:
+        resp = unittest.mock.Mock()
+        resp.raise_for_status = lambda: None
+        resp.json.return_value = json_data
+        return resp
+
+    def test_get_request_relogins_and_retries_on_10402(self) -> None:
+        """10402 (token expired) must trigger re-login and a second HTTP request."""
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._token = "old-token"
+
+        api.requests.get = unittest.mock.Mock(side_effect=[
+            self._make_response({"code": 10402, "msg": "token expired"}),
+            self._make_response({"code": 0, "data": {"rb": 85}}),
+        ])
+
+        def refresh_token():
+            jackery_api._token = "fresh-token"
+            return True
+
+        jackery_api.login = unittest.mock.Mock(side_effect=refresh_token)
+
+        result = jackery_api._get_request("/v1/device/property")
+
+        jackery_api.login.assert_called_once()
+        self.assertEqual(api.requests.get.call_count, 2)
+        self.assertEqual(
+            api.requests.get.call_args_list[1].kwargs["headers"]["token"],
+            "fresh-token",
+        )
+        self.assertEqual(result["data"]["rb"], 85)
+
+    def test_get_request_relogins_and_retries_on_10403(self) -> None:
+        """10403 (session displaced) must be handled identically to 10402."""
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._token = "old-token"
+
+        api.requests.get = unittest.mock.Mock(side_effect=[
+            self._make_response({"code": 10403, "msg": "Account logged in elsewhere"}),
+            self._make_response({"code": 0, "data": {"rb": 70}}),
+        ])
+
+        def refresh_token():
+            jackery_api._token = "fresh-token"
+            return True
+
+        jackery_api.login = unittest.mock.Mock(side_effect=refresh_token)
+
+        result = jackery_api._get_request("/v1/device/property")
+
+        jackery_api.login.assert_called_once()
+        self.assertEqual(api.requests.get.call_count, 2)
+        self.assertEqual(
+            api.requests.get.call_args_list[1].kwargs["headers"]["token"],
+            "fresh-token",
+        )
+        self.assertEqual(result["data"]["rb"], 70)
+
+    def test_get_request_raises_auth_error_when_relogin_fails(self) -> None:
+        """If re-login fails after 10402/10403, JackeryAuthenticationError must be raised."""
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._token = "old-token"
+
+        api.requests.get = unittest.mock.Mock(
+            return_value=self._make_response({"code": 10403, "msg": "displaced"})
+        )
+        jackery_api.login = unittest.mock.Mock(return_value=False)
+
+        with self.assertRaises(api.JackeryAuthenticationError):
+            jackery_api._get_request("/v1/device/property")
+
+        jackery_api.login.assert_called_once()
+        self.assertEqual(api.requests.get.call_count, 1)
+
+    def test_login_skips_inner_when_recently_refreshed(self) -> None:
+        """Concurrent login callers must reuse credentials refreshed within 5 s."""
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._token = "existing-token"
+        jackery_api._last_login_time = time.monotonic() - 1.0  # 1 second ago
+
+        mock_inner = unittest.mock.Mock(return_value=True)
+        jackery_api._login_inner = mock_inner
+
+        result = jackery_api.login()
+
+        self.assertTrue(result)
+        mock_inner.assert_not_called()
+
+
+class HttpSessionAsyncTests(unittest.IsolatedAsyncioTestCase):
+    """Validate async MQTT command retry with credential refresh."""
+
+    def setUp(self) -> None:
+        self.original_aiomqtt = api.aiomqtt
+
+    def tearDown(self) -> None:
+        api.aiomqtt = self.original_aiomqtt
+
+    async def test_mqtt_command_routes_through_persistent_session(self) -> None:
+        """async_send_transfer_switch_command must publish via _mqtt_session."""
+        device_sn = "ts-sn"
+        action_id = 9
+
+        published_payloads = []
+        captured_matcher = [None]
+
+        async def fake_publish_and_wait(payload, matcher, timeout=10.0):
+            published_payloads.append(payload)
+            captured_matcher[0] = matcher
+            return {
+                "deviceSn": device_sn,
+                "actionId": action_id,
+                "body": {"result": "ok"},
+            }
+
+        jackery_api = api.JackeryAPI("user@example.com", "password")
+        jackery_api._mqtt_session = types.SimpleNamespace(
+            publish_and_wait=fake_publish_and_wait
+        )
+
+        await jackery_api.async_send_transfer_switch_command(
+            "device-1", device_sn, action_id, {"cmd": 12, "idx": 1, "sw": 1}
+        )
+
+        self.assertEqual(len(published_payloads), 1)
+        self.assertEqual(published_payloads[0]["actionId"], action_id)
+        self.assertEqual(published_payloads[0]["deviceSn"], device_sn)
+        self.assertEqual(published_payloads[0]["body"], {"cmd": 12, "idx": 1, "sw": 1})
+
+        # Matcher must accept actionId echo from device, reject actionId=1 push
+        self.assertTrue(captured_matcher[0]({"deviceSn": device_sn, "actionId": action_id}))
+        self.assertFalse(captured_matcher[0]({"deviceSn": device_sn, "actionId": 1}))
+
+
+class DeviceResolutionTests(unittest.TestCase):
+    """Validate Socketry control device lookup logic."""
+
+    def test_resolve_control_device_falls_back_to_device_sn(self) -> None:
+        """Device lookup must fall back to devSn when devId does not match."""
+        expected = types.SimpleNamespace(name="target")
+        client = types.SimpleNamespace(
+            devices=[{"devId": "999-other", "devSn": "target-sn"}],
+            device=lambda serial: expected if serial == "target-sn" else None,
+        )
+
+        result = api.JackeryAPI._resolve_control_device(
+            client, "999-different", "target-sn"
+        )
+
+        self.assertIs(result, expected)
+
+    def test_resolve_control_device_raises_when_no_match(self) -> None:
+        """KeyError must be raised when neither devId nor devSn matches."""
+        client = types.SimpleNamespace(
+            devices=[{"devId": "wrong-id", "devSn": "wrong-sn"}],
+            device=lambda serial: None,
+        )
+
+        with self.assertRaises(KeyError):
+            api.JackeryAPI._resolve_control_device(
+                client, "not-found", "also-not-found"
+            )
 
 
 if __name__ == "__main__":

@@ -57,6 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         raise ConfigEntryNotReady(f"Failed to fetch Jackery devices: {err}") from err
 
+    await api.start_mqtt_session()
+
     if not devices:
         _LOGGER.warning("No Jackery devices found for this account.")
 
@@ -67,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_sn = device.get("devSn", "")
         is_transfer_switch = device.get("modelCode") == 2001
 
-        # Persistent plan cache — survives across coordinator update cycles.
+        # Persistent plan cache - survives across coordinator update cycles.
         # Populated by MQTT query on a throttled schedule; injected into every
         # coordinator update so plan entities always have data.
         plan_cache: dict[str, list[dict]] = {"plans": []}
@@ -81,7 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         plan_poll_counter = [0]
         circuit_poll_counter = [0]
         PLAN_QUERY_EVERY_N = 5  # query plans every Nth poll (~5 min at 60s)
-        CIRCUIT_QUERY_EVERY_N = 3  # query circuits every Nth poll (~3 min)
+        CIRCUIT_QUERY_EVERY_N = 10  # query circuits every Nth poll (~10 min)
         MAX_HTTP_FAILURES = 15  # tolerate ~15 min of blips before going unavailable
 
         async def _async_update_data(
@@ -167,7 +169,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 _circuit_cache["circuits"] = circuits
                             elif circuits:
                                 _LOGGER.warning(
-                                    "Circuit query for %s returned %d entries with no 'nm' key — nm-guard blocked overwrite (actionId=1 leak?)",
+                                    "Circuit query for %s returned %d entries with no 'nm' key - nm-guard blocked overwrite (actionId=1 leak?)",
                                     dev_sn, len(circuits),
                                 )
                         except Exception:
@@ -241,6 +243,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_config_entry_first_refresh()
         coordinators[device_id] = coordinator
 
+        # Real-time circuit power: merge incoming pc values from actionId=1 push
+        if is_transfer_switch and device_sn:
+            api.register_push_handler(
+                device_sn,
+                _make_circuit_push_handler(circuit_cache, coordinator),
+            )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinators": coordinators,
@@ -249,11 +258,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register plan services (idempotent — only registers once per domain)
+    # Register plan services (idempotent - only registers once per domain)
     if not hass.services.has_service(DOMAIN, "create_plan"):
         _register_plan_services(hass)
 
     return True
+
+
+def _make_circuit_push_handler(circuit_cache: dict, coordinator) -> callable:
+    """Return a push handler that merges circuit pc values from actionId=1 pushes."""
+    def _handle(data: dict) -> None:
+        if data.get("actionId") != 1:
+            return
+        body = data.get("body")
+        if not isinstance(body, dict) or "cir" not in body:
+            return
+        cached = circuit_cache["circuits"]
+        if not cached:
+            return
+        updates = {
+            c["idx"]: c["pc"]
+            for c in body["cir"]
+            if "idx" in c and "pc" in c
+        }
+        if not updates:
+            return
+        changed = False
+        for circuit in cached:
+            new_pc = updates.get(circuit["idx"])
+            if new_pc is not None and circuit.get("pc") != new_pc:
+                circuit["pc"] = new_pc
+                changed = True
+        if changed and coordinator.data is not None:
+            new_data = dict(coordinator.data)
+            new_data["_circuits"] = list(cached)
+            coordinator.async_set_updated_data(new_data)
+            _LOGGER.debug("Circuit push: updated pc for %d circuits", len(updates))
+    return _handle
 
 
 def _find_transfer_switch(hass: HomeAssistant) -> tuple[JackeryAPI, str, str] | None:

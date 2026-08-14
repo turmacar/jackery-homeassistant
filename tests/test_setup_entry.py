@@ -133,6 +133,9 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
         async def async_config_entry_first_refresh(self) -> None:
             self.data = await self.update_method()
 
+        def async_set_updated_data(self, data) -> None:
+            self.data = data
+
     config_entries_mod.ConfigEntry = ConfigEntry
     const_mod.CONF_PASSWORD = "password"
     const_mod.CONF_USERNAME = "username"
@@ -175,6 +178,15 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
         device_detail_results: dict[str, dict[str, object]] = {}
         device_detail_error: Exception | None = None
         instances: list["JackeryAPI"] = []
+        plans_result: list = []
+        plans_error: Exception | None = None
+        circuits_result: list = []
+        circuits_error: Exception | None = None
+        plans_query_calls: list = []
+        circuits_query_calls: list = []
+        create_plan_calls: list = []
+        update_plan_calls: list = []
+        delete_plan_calls: list = []
 
         def __init__(self, account: str, password: str) -> None:
             self.account = account
@@ -194,6 +206,39 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
         async def async_close(self) -> None:
             """Close the stub API client."""
 
+        async def start_mqtt_session(self) -> None:
+            """No-op stub for persistent MQTT session startup."""
+
+        def register_push_handler(self, device_sn: str, handler: callable) -> None:
+            """No-op stub - push handlers not exercised in setup tests."""
+
+        async def async_query_transfer_switch_plans(self, device_sn: str) -> list:
+            type(self).plans_query_calls.append(device_sn)
+            if type(self).plans_error is not None:
+                raise type(self).plans_error
+            return list(type(self).plans_result)
+
+        async def async_query_transfer_switch_circuits(self, device_sn: str) -> list:
+            type(self).circuits_query_calls.append(device_sn)
+            if type(self).circuits_error is not None:
+                raise type(self).circuits_error
+            return list(type(self).circuits_result)
+
+        async def async_create_transfer_switch_plan(
+            self, device_id: str, device_sn: str, plan: dict
+        ) -> None:
+            type(self).create_plan_calls.append((device_id, device_sn, plan))
+
+        async def async_update_transfer_switch_plan(
+            self, device_id: str, device_sn: str, plan: dict
+        ) -> None:
+            type(self).update_plan_calls.append((device_id, device_sn, plan))
+
+        async def async_delete_transfer_switch_plan(
+            self, device_id: str, device_sn: str, pid: str
+        ) -> None:
+            type(self).delete_plan_calls.append((device_id, device_sn, pid))
+
         @classmethod
         def reset(cls) -> None:
             """Reset the stub API state between tests."""
@@ -202,6 +247,15 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
             cls.device_detail_results = {}
             cls.device_detail_error = None
             cls.instances = []
+            cls.plans_result = []
+            cls.plans_error = None
+            cls.circuits_result = []
+            cls.circuits_error = None
+            cls.plans_query_calls = []
+            cls.circuits_query_calls = []
+            cls.create_plan_calls = []
+            cls.update_plan_calls = []
+            cls.delete_plan_calls = []
 
     api_mod.JackeryAPI = JackeryAPI
     api_mod.JackeryAuthenticationError = JackeryAuthenticationError
@@ -398,6 +452,238 @@ class AsyncSetupEntryTests(unittest.IsolatedAsyncioTestCase):
             await integration.async_setup_entry(hass, entry)
 
         hass.config_entries.async_forward_entry_setups.assert_not_awaited()
+
+
+class TransferSwitchCoordinatorTests(unittest.IsolatedAsyncioTestCase):
+    """Validate Transfer Switch coordinator caching and MQTT-gate behaviour."""
+
+    _TS_DEVICE = {
+        "devId": "ts-1",
+        "devName": "Transfer Switch",
+        "devSn": "ts-sn",
+        "modelCode": 2001,
+    }
+
+    def setUp(self) -> None:
+        api.JackeryAPI.reset()
+        integration.DataUpdateCoordinator.instances = []
+        integration.dt_util.now = lambda: "2026-04-18T19:00:00+01:00"
+
+    @staticmethod
+    def _make_hass():
+        return types.SimpleNamespace(
+            data={},
+            async_add_executor_job=AsyncMock(side_effect=lambda func, *args: func(*args)),
+            config_entries=types.SimpleNamespace(
+                async_forward_entry_setups=AsyncMock(),
+                async_unload_platforms=AsyncMock(return_value=True),
+            ),
+            services=types.SimpleNamespace(
+                has_service=lambda *a: False,
+                async_register=lambda *a, **kw: None,
+            ),
+        )
+
+    async def _setup_ts(self):
+        hass = self._make_hass()
+        entry = types.SimpleNamespace(
+            entry_id="entry-1",
+            data={"username": "user@example.com", "password": "hunter2"},
+        )
+        api.JackeryAPI.device_list_result = {"data": [self._TS_DEVICE]}
+        api.JackeryAPI.device_detail_results = {
+            "ts-1": {"data": {"properties": {"op": 100, "ip": 50}}}
+        }
+        await integration.async_setup_entry(hass, entry)
+        coordinator = hass.data["jackery"]["entry-1"]["coordinators"]["ts-1"]
+        return coordinator
+
+    async def test_mqtt_queries_skipped_when_http_poll_is_stale(self) -> None:
+        """MQTT circuit/plan queries must not run while the HTTP poll is failing."""
+        api.JackeryAPI.plans_result = [
+            {"pid": "p1", "tt": 0, "st": "22:00", "et": "06:00", "sw": 1, "lps": 127}
+        ]
+        api.JackeryAPI.circuits_result = [
+            {"idx": 1, "nm": "T2ZmaWNl", "pc": 100, "sw": 1, "sph": 0, "pr": 1}
+        ]
+        coordinator = await self._setup_ts()
+
+        plan_calls = len(api.JackeryAPI.plans_query_calls)
+        circuit_calls = len(api.JackeryAPI.circuits_query_calls)
+
+        api.JackeryAPI.device_detail_error = ConnectionError("dns blip")
+        # Run enough polls to exceed both PLAN_QUERY_EVERY_N and CIRCUIT_QUERY_EVERY_N
+        for _ in range(12):
+            await coordinator.update_method()
+
+        self.assertEqual(len(api.JackeryAPI.plans_query_calls), plan_calls)
+        self.assertEqual(len(api.JackeryAPI.circuits_query_calls), circuit_calls)
+
+    async def test_plan_cache_preserved_when_query_returns_empty(self) -> None:
+        """An empty plan-query response must not wipe the cached plan list."""
+        api.JackeryAPI.plans_result = [
+            {"pid": "p1", "tt": 0, "st": "22:00", "et": "06:00", "sw": 1, "lps": 127}
+        ]
+        coordinator = await self._setup_ts()
+
+        self.assertEqual(len(coordinator.data["_plans"]), 1)
+
+        api.JackeryAPI.plans_result = []
+        # Drive 4 more polls so the plan counter reaches PLAN_QUERY_EVERY_N (5)
+        for _ in range(4):
+            await coordinator.update_method()
+
+        self.assertEqual(len(coordinator.data["_plans"]), 1)
+        self.assertEqual(coordinator.data["_plans"][0]["pid"], "p1")
+
+    async def test_circuit_cache_preserved_when_query_returns_empty(self) -> None:
+        """An empty circuit-query response must not wipe the cached circuit list."""
+        api.JackeryAPI.circuits_result = [
+            {"idx": 1, "nm": "T2ZmaWNl", "pc": 100, "sw": 1, "sph": 0, "pr": 1}
+        ]
+        coordinator = await self._setup_ts()
+
+        self.assertEqual(len(coordinator.data["_circuits"]), 1)
+
+        api.JackeryAPI.circuits_result = []
+        # Drive 9 more polls so the circuit counter reaches CIRCUIT_QUERY_EVERY_N (10)
+        for _ in range(9):
+            await coordinator.update_method()
+
+        self.assertEqual(len(coordinator.data["_circuits"]), 1)
+        self.assertIn("nm", coordinator.data["_circuits"][0])
+
+    async def test_circuit_nm_guard_blocks_cache_overwrite(self) -> None:
+        """Circuit data lacking 'nm' must not replace the named-circuit cache."""
+        api.JackeryAPI.circuits_result = [
+            {"idx": 1, "nm": "T2ZmaWNl", "pc": 100, "sw": 1, "sph": 0, "pr": 1}
+        ]
+        coordinator = await self._setup_ts()
+
+        # Simulate a response without nm (e.g. a rogue actionId=1 leak through the api filter)
+        api.JackeryAPI.circuits_result = [{"idx": 1, "pc": 200}]
+        for _ in range(9):
+            await coordinator.update_method()
+
+        self.assertIn("nm", coordinator.data["_circuits"][0])
+        self.assertEqual(coordinator.data["_circuits"][0]["pc"], 100)
+
+
+class PlanServiceTests(unittest.IsolatedAsyncioTestCase):
+    """Validate Transfer Switch plan CRUD service handlers."""
+
+    _TS_DEVICE = {
+        "devId": "ts-1",
+        "devName": "Transfer Switch",
+        "devSn": "ts-sn",
+        "modelCode": 2001,
+    }
+
+    def setUp(self) -> None:
+        api.JackeryAPI.reset()
+        integration.DataUpdateCoordinator.instances = []
+        integration.dt_util.now = lambda: "2026-04-18T19:00:00+01:00"
+
+    @staticmethod
+    def _make_hass_with_services():
+        """Return (hass, captured_services) capturing registered service handlers."""
+        captured: dict = {}
+
+        def capture(domain, name, handler):
+            captured[name] = handler
+
+        hass = types.SimpleNamespace(
+            data={},
+            async_add_executor_job=AsyncMock(side_effect=lambda func, *args: func(*args)),
+            config_entries=types.SimpleNamespace(
+                async_forward_entry_setups=AsyncMock(),
+                async_unload_platforms=AsyncMock(return_value=True),
+            ),
+            services=types.SimpleNamespace(
+                has_service=lambda *a: False,
+                async_register=capture,
+            ),
+        )
+        return hass, captured
+
+    async def _setup_ts_with_services(self, plans=None):
+        hass, services = self._make_hass_with_services()
+        entry = types.SimpleNamespace(
+            entry_id="entry-1",
+            data={"username": "user@example.com", "password": "hunter2"},
+        )
+        api.JackeryAPI.device_list_result = {"data": [self._TS_DEVICE]}
+        api.JackeryAPI.device_detail_results = {
+            "ts-1": {"data": {"properties": {"op": 0}}}
+        }
+        if plans is not None:
+            api.JackeryAPI.plans_result = plans
+        await integration.async_setup_entry(hass, entry)
+        coordinator = hass.data["jackery"]["entry-1"]["coordinators"]["ts-1"]
+        return hass, services, coordinator
+
+    async def test_create_plan_sends_correct_command(self) -> None:
+        """create_plan must build the right plan dict and call the API."""
+        _, services, _ = await self._setup_ts_with_services()
+        call = types.SimpleNamespace(data={
+            "type": 0,
+            "start_time": "22:00",
+            "end_time": "06:00",
+            "enabled": True,
+            "days": 127,
+        })
+
+        with unittest.mock.patch("asyncio.sleep", new_callable=AsyncMock):
+            await services["create_plan"](call)
+
+        self.assertEqual(len(api.JackeryAPI.create_plan_calls), 1)
+        _, dev_sn, plan = api.JackeryAPI.create_plan_calls[0]
+        self.assertEqual(dev_sn, "ts-sn")
+        self.assertEqual(plan["tt"], 0)
+        self.assertEqual(plan["st"], "22:00")
+        self.assertEqual(plan["et"], "06:00")
+        self.assertEqual(plan["sw"], 1)
+        self.assertEqual(plan["lps"], 127)
+        self.assertIn("pid", plan)
+
+    async def test_update_plan_merges_fields_and_patches_coordinator(self) -> None:
+        """update_plan must apply only the supplied fields and update coordinator data."""
+        existing = {"pid": "42", "tt": 0, "st": "22:00", "et": "06:00", "sw": 1, "lps": 127}
+        _, services, coordinator = await self._setup_ts_with_services(plans=[existing])
+
+        call = types.SimpleNamespace(data={"plan_id": "42", "start_time": "23:00"})
+        await services["update_plan"](call)
+
+        self.assertEqual(len(api.JackeryAPI.update_plan_calls), 1)
+        _, dev_sn, merged = api.JackeryAPI.update_plan_calls[0]
+        self.assertEqual(dev_sn, "ts-sn")
+        self.assertEqual(merged["pid"], "42")
+        self.assertEqual(merged["st"], "23:00")   # updated
+        self.assertEqual(merged["et"], "06:00")   # unchanged
+        self.assertEqual(merged["tt"], 0)          # unchanged
+
+        self.assertEqual(coordinator.data["_plans"][0]["st"], "23:00")
+
+    async def test_update_plan_raises_when_plan_not_found(self) -> None:
+        """update_plan must raise HomeAssistantError when the pid is absent."""
+        _, services, _ = await self._setup_ts_with_services(plans=[])
+
+        call = types.SimpleNamespace(data={"plan_id": "nonexistent"})
+        with self.assertRaises(integration.HomeAssistantError):
+            await services["update_plan"](call)
+
+    async def test_delete_plan_sends_correct_pid(self) -> None:
+        """delete_plan must forward the plan_id to the API delete method."""
+        _, services, _ = await self._setup_ts_with_services()
+        call = types.SimpleNamespace(data={"plan_id": "99"})
+
+        with unittest.mock.patch("asyncio.sleep", new_callable=AsyncMock):
+            await services["delete_plan"](call)
+
+        self.assertEqual(len(api.JackeryAPI.delete_plan_calls), 1)
+        _, dev_sn, pid = api.JackeryAPI.delete_plan_calls[0]
+        self.assertEqual(dev_sn, "ts-sn")
+        self.assertEqual(pid, "99")
 
 
 if __name__ == "__main__":

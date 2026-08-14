@@ -57,7 +57,7 @@ def _circuit_display_name(circuit: dict, partner: dict | None = None) -> str:
         name = _decode_circuit_name(partner.get("nm", ""))
     if not name:
         name = str(circuit["idx"])
-    # Avoid "Circuit Circuit 5" — strip if user already prefixed with "Circuit"
+    # Avoid "Circuit Circuit 5" - strip if user already prefixed with "Circuit"
     if name.lower().startswith("circuit "):
         name = name[8:]
     return name

@@ -36,6 +36,174 @@ except ModuleNotFoundError as err:  # pragma: no cover - dependency provided in 
 _LOGGER = logging.getLogger(__name__)
 
 
+class JackeryMqttSession:
+    """Persistent single-connection MQTT session for Jackery API.
+
+    Owns one long-lived ``aiomqtt.Client`` and routes incoming messages to the
+    active pending-request future (queries / commands) or drops them as push
+    data.  A single ``_operation_lock`` serialises publish+wait operations so
+    response matching is unambiguous - only one in-flight MQTT request exists
+    at a time.
+    """
+
+    _MAX_RECONNECT_DELAY = 30.0
+
+    def __init__(self, api: "JackeryAPI") -> None:
+        self._api = api
+        self._client: "aiomqtt.Client | None" = None
+        self._user_id: "str | None" = None
+        self._loop_task: "asyncio.Task | None" = None
+        self._running = False
+        self._reconnect_delay = 1.0
+        self._operation_lock = asyncio.Lock()
+        self._pending_matcher: "callable | None" = None
+        self._pending_future: "asyncio.Future | None" = None
+        self._connected = asyncio.Event()
+        self._push_handlers: dict[str, callable] = {}
+
+    async def start(self) -> None:
+        """Start the background reconnect loop."""
+        self._running = True
+        self._loop_task = asyncio.create_task(
+            self._run_loop(), name="jackery_mqtt_session"
+        )
+
+    async def stop(self) -> None:
+        """Cancel the background loop and clean up."""
+        self._running = False
+        if self._loop_task is not None:
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._loop_task = None
+        self._fail_pending(RuntimeError("MQTT session stopped"))
+
+    async def _run_loop(self) -> None:
+        """Reconnect loop - runs until stop() is called."""
+        while self._running:
+            try:
+                params, user_id = self._api._build_mqtt_params()
+                dev_topic = f"hb/app/{user_id}/device"
+                async with aiomqtt.Client(**params) as client:
+                    self._client = client
+                    self._user_id = user_id
+                    self._reconnect_delay = 1.0
+                    await client.subscribe(dev_topic, qos=1)
+                    self._connected.set()
+                    _LOGGER.info("Jackery MQTT persistent session connected")
+                    async for message in client.messages:
+                        self._dispatch(message)
+            except asyncio.CancelledError:
+                return
+            except Exception as err:
+                _LOGGER.warning(
+                    "Jackery MQTT session error: %s; reconnecting in %.0fs",
+                    err,
+                    self._reconnect_delay,
+                )
+            finally:
+                self._client = None
+                self._connected.clear()
+                self._fail_pending(RuntimeError("MQTT session disconnected"))
+
+            if not self._running:
+                return
+            try:
+                await asyncio.sleep(self._reconnect_delay)
+            except asyncio.CancelledError:
+                return
+            self._reconnect_delay = min(
+                self._reconnect_delay * 2, self._MAX_RECONNECT_DELAY
+            )
+
+    def register_push_handler(self, device_sn: str, handler: callable) -> None:
+        """Register a handler for unsolicited push messages from device_sn."""
+        self._push_handlers[device_sn] = handler
+
+    def _dispatch(self, message) -> None:
+        """Route an incoming message to a pending future or a push handler."""
+        try:
+            data = json.loads(message.payload)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        if (
+            self._pending_future is not None
+            and not self._pending_future.done()
+            and self._pending_matcher is not None
+            and self._pending_matcher(data)
+        ):
+            self._pending_future.set_result(data)
+            return
+
+        device_sn = data.get("deviceSn", "")
+        handler = self._push_handlers.get(device_sn)
+        if handler is not None:
+            handler(data)
+        else:
+            _LOGGER.debug(
+                "MQTT push: deviceSn=%s actionId=%s",
+                device_sn,
+                data.get("actionId"),
+            )
+
+    def _fail_pending(self, err: Exception) -> None:
+        """Fail the pending future (no-op if none outstanding)."""
+        if self._pending_future is not None and not self._pending_future.done():
+            self._pending_future.set_exception(err)
+        self._pending_matcher = None
+        self._pending_future = None
+
+    async def publish_and_wait(
+        self,
+        payload: dict,
+        matcher: "callable",
+        timeout: float = 10.0,
+    ) -> dict:
+        """Publish a command and await a matching response.
+
+        Waits up to *timeout* seconds total: first for the session to connect
+        (handles startup latency), then for a matching response after publish.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+
+        if not self._connected.is_set():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError("MQTT session not connected")
+            try:
+                async with asyncio.timeout(remaining):
+                    await self._connected.wait()
+            except TimeoutError:
+                raise TimeoutError(
+                    f"MQTT session did not connect within {timeout:.0f}s"
+                ) from None
+
+        async with self._operation_lock:
+            if self._client is None or self._user_id is None:
+                raise RuntimeError("MQTT session disconnected")
+
+            loop = asyncio.get_running_loop()
+            self._pending_future = loop.create_future()
+            self._pending_matcher = matcher
+            try:
+                cmd_topic = f"hb/app/{self._user_id}/command"
+                payload_str = json.dumps(payload, separators=(",", ":"))
+                await self._client.publish(cmd_topic, payload_str, qos=1)
+
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise TimeoutError("MQTT operation timed out after publish")
+                async with asyncio.timeout(remaining):
+                    return await self._pending_future
+            finally:
+                self._pending_matcher = None
+                self._pending_future = None
+
+
 class JackeryAuthenticationError(Exception):
     """Exception to indicate an authentication error."""
 
@@ -63,9 +231,7 @@ class JackeryAPI:
         self._control_write_lock = asyncio.Lock()
         self._login_lock = threading.Lock()
         self._last_login_time: float = 0
-        # TEMP (race investigation): tracks concurrently-open MQTT connections
-        # across socketry and raw aiomqtt paths. Remove once resolved.
-        self._mqtt_race_active: dict[str, float] = {}
+        self._mqtt_session: Optional[JackeryMqttSession] = None
 
     def _name_uuid_from_bytes_java(self, data: bytes) -> str:
         """Generate a version 3 UUID using an MD5 hash."""
@@ -104,7 +270,7 @@ class JackeryAPI:
         with self._login_lock:
             # If another thread just logged in, reuse its credentials
             if time.monotonic() - self._last_login_time < 5 and self._token:
-                _LOGGER.debug("Skipping login — another thread refreshed credentials %.1fs ago",
+                _LOGGER.debug("Skipping login - another thread refreshed credentials %.1fs ago",
                               time.monotonic() - self._last_login_time)
                 return True
             return self._login_inner()
@@ -254,7 +420,7 @@ class JackeryAPI:
             if socketry is None:
                 raise RuntimeError("socketry is not installed")
             if not self._mqtt_user_id or not self._mqtt_password_b64 or not self._token:
-                raise RuntimeError("MQTT credentials not available — call login() first")
+                raise RuntimeError("MQTT credentials not available - call login() first")
 
             # Build from existing HA credentials to avoid a new HTTP login that
             # would rotate the auth token. Omitting email/password prevents
@@ -270,8 +436,6 @@ class JackeryAPI:
                 "devices": [],
             }
             client = None
-            label = "socketry:init"
-            self._mqtt_race_start(label)
             try:
                 client = socketry.Client(creds)
                 await client.fetch_devices()
@@ -281,16 +445,32 @@ class JackeryAPI:
             except Exception:
                 await self._async_close_control_client(client)
                 raise
-            finally:
-                self._mqtt_race_end(label)
             self._control_client = client
-            # TEMP: mark socketry client as persistently connected so aiomqtt opens show as races
-            self._mqtt_race_active["socketry:client"] = time.monotonic()
-            _LOGGER.debug("MQTT-RACE-CHECK: socketry client now connected")
             return client
 
+    async def start_mqtt_session(self) -> None:
+        """Start the persistent MQTT session (no-op if dependencies are missing)."""
+        if aiomqtt is None or _socketry_mqtt_params is None:
+            return
+        if self._mqtt_session is not None:
+            return
+        self._mqtt_session = JackeryMqttSession(self)
+        await self._mqtt_session.start()
+
+    async def stop_mqtt_session(self) -> None:
+        """Stop the persistent MQTT session."""
+        if self._mqtt_session is not None:
+            await self._mqtt_session.stop()
+            self._mqtt_session = None
+
+    def register_push_handler(self, device_sn: str, handler: callable) -> None:
+        """Register a handler for unsolicited MQTT push messages from device_sn."""
+        if self._mqtt_session is not None:
+            self._mqtt_session.register_push_handler(device_sn, handler)
+
     async def async_close(self) -> None:
-        """Release any cached Socketry control client."""
+        """Stop the MQTT session and release the cached Socketry control client."""
+        await self.stop_mqtt_session()
         async with self._control_write_lock:
             await self._async_reset_control_client()
 
@@ -300,9 +480,6 @@ class JackeryAPI:
             client_to_close = self._control_client if client is None else client
             if client is None:
                 self._control_client = None
-                # TEMP: socketry client gone — clear persistent-connection marker
-                if self._mqtt_race_active.pop("socketry:client", None) is not None:
-                    _LOGGER.debug("MQTT-RACE-CHECK: socketry client disconnected")
             elif self._control_client is client:
                 self._control_client = None
 
@@ -322,6 +499,7 @@ class JackeryAPI:
                 result = method()
                 if inspect.isawaitable(result):
                     await result
+                break  # first successful close wins; don't try remaining methods
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # pragma: no cover - defensive cleanup
@@ -330,27 +508,6 @@ class JackeryAPI:
                     method_name,
                     err,
                 )
-
-    def _mqtt_race_start(self, label: str) -> None:
-        """TEMP (race investigation): record a connection attempt starting."""
-        now = time.monotonic()
-        others = {k: round(now - t, 2) for k, t in self._mqtt_race_active.items()}
-        self._mqtt_race_active[label] = now
-        if others:
-            _LOGGER.debug(
-                "MQTT-RACE-CHECK: opening %s while already open: %s",
-                label, others,
-            )
-        else:
-            _LOGGER.debug("MQTT-RACE-CHECK: opening %s (no concurrent connections)", label)
-
-    def _mqtt_race_end(self, label: str) -> None:
-        """TEMP (race investigation): record a connection attempt ending."""
-        start = self._mqtt_race_active.pop(label, None)
-        if start is not None:
-            _LOGGER.debug(
-                "MQTT-RACE-CHECK: closed %s after %.2fs", label, time.monotonic() - start,
-            )
 
     async def async_set_device_property(
         self,
@@ -391,7 +548,7 @@ class JackeryAPI:
         if _socketry_mqtt_params is None:
             raise RuntimeError("socketry is not installed")
         if not self._mqtt_user_id or not self._mqtt_password_b64:
-            raise RuntimeError("MQTT credentials not available — call login() first")
+            raise RuntimeError("MQTT credentials not available - call login() first")
         creds = {
             "userId": self._mqtt_user_id,
             "mqttPassWord": self._mqtt_password_b64,
@@ -407,78 +564,44 @@ class JackeryAPI:
         body: dict,
         message_type: str = "DevicePropertyChange",
     ) -> None:
-        """Send a raw MQTT command using the Transfer Switch protocol.
-
-        Uses MQTT credentials from the REST API login to avoid a
-        separate socketry login session that would compete for the
-        single-session MQTT password.
-        """
+        """Send a raw MQTT command via the persistent Transfer Switch session."""
         if aiomqtt is None:
             raise RuntimeError("aiomqtt is not installed")
+        if self._mqtt_session is None:
+            raise RuntimeError("MQTT session not started - call start_mqtt_session() first")
 
-        for attempt in range(2):
-            params, user_id = self._build_mqtt_params()
-            topic = f"hb/app/{user_id}/command"
-            ts = int(time.time() * 1000)
-            payload = json.dumps(
-                {
-                    "deviceSn": device_sn,
-                    "id": ts,
-                    "version": 0,
-                    "messageType": message_type,
-                    "actionId": action_id,
-                    "timestamp": ts,
-                    "body": body,
-                },
-                separators=(",", ":"),
+        ts = int(time.time() * 1000)
+        payload = {
+            "deviceSn": device_sn,
+            "id": ts,
+            "version": 0,
+            "messageType": message_type,
+            "actionId": action_id,
+            "timestamp": ts,
+            "body": body,
+        }
+        _LOGGER.info("MQTT publish: actionId=%d body=%s", action_id, body)
+
+        # Accept a response echoing the same actionId from this device.
+        # Periodic push messages (actionId=1) are implicitly excluded.
+        def _match(data: dict) -> bool:
+            return (
+                data.get("deviceSn") == device_sn
+                and data.get("actionId") == action_id
             )
+
+        try:
+            result = await self._mqtt_session.publish_and_wait(payload, _match, timeout=5.0)
             _LOGGER.info(
-                "MQTT publish: topic=%s actionId=%d body=%s",
-                topic, action_id, body,
+                "MQTT response: messageType=%s actionId=%s body=%s",
+                result.get("messageType"),
+                result.get("actionId"),
+                result.get("body"),
             )
-            _LOGGER.info("MQTT payload: %s", payload)
-            try:
-                dev_topic = f"hb/app/{user_id}/device"
-                label = f"aiomqtt:command:actionId={action_id}"
-                self._mqtt_race_start(label)
-                try:
-                    async with aiomqtt.Client(**params) as mqtt:
-                        await mqtt.subscribe(dev_topic, qos=1)
-                        await mqtt.publish(topic, payload, qos=1)
-                        # Wait briefly for device response
-                        try:
-                            async with asyncio.timeout(5):
-                                async for message in mqtt.messages:
-                                    try:
-                                        data = json.loads(message.payload)
-                                    except (json.JSONDecodeError, TypeError):
-                                        continue
-                                    _LOGGER.info(
-                                        "MQTT response: messageType=%s actionId=%s body=%s",
-                                        data.get("messageType"),
-                                        data.get("actionId"),
-                                        data.get("body"),
-                                    )
-                                    if data.get("deviceSn") == device_sn:
-                                        return
-                        except TimeoutError:
-                            _LOGGER.warning(
-                                "No MQTT response within 5s for actionId=%d",
-                                action_id,
-                            )
-                finally:
-                    self._mqtt_race_end(label)
-                return
-            except Exception:
-                if attempt == 1:
-                    raise
-                _LOGGER.debug(
-                    "Transfer switch command failed (attempt %d), "
-                    "refreshing credentials and retrying",
-                    attempt + 1,
-                )
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self.login)
+        except TimeoutError:
+            _LOGGER.warning("No MQTT response within 5s for actionId=%d", action_id)
+        except Exception:
+            _LOGGER.exception("MQTT command failed for actionId=%d device=%s", action_id, device_sn)
 
     async def async_set_device_dp(
         self,
@@ -513,64 +636,37 @@ class JackeryAPI:
         self,
         device_sn: str,
     ) -> list[dict]:
-        """Query charge/discharge plans from Transfer Switch via MQTT.
-
-        Opens a short-lived MQTT connection, sends a QueryElectricityStrategy
-        command, and waits for the response containing the ``cds`` plan list.
-        Socketry's subscribe loop filters out non-DevicePropertyChange messages,
-        so this method handles the MQTT exchange directly.
-        """
+        """Query charge/discharge plans from Transfer Switch via persistent MQTT session."""
         if aiomqtt is None:
             raise RuntimeError("aiomqtt is not installed")
+        if self._mqtt_session is None:
+            raise RuntimeError("MQTT session not started - call start_mqtt_session() first")
 
-        params, user_id = self._build_mqtt_params()
-
-        cmd_topic = f"hb/app/{user_id}/command"
-        dev_topic = f"hb/app/{user_id}/device"
         ts = int(time.time() * 1000)
-        payload = json.dumps(
-            {
-                "deviceSn": device_sn,
-                "id": ts,
-                "version": 0,
-                "messageType": "QueryElectricityStrategy",
-                "actionId": 12,
-                "timestamp": ts,
-                "body": {"cmd": 15},
-            },
-            separators=(",", ":"),
-        )
+        payload = {
+            "deviceSn": device_sn,
+            "id": ts,
+            "version": 0,
+            "messageType": "QueryElectricityStrategy",
+            "actionId": 12,
+            "timestamp": ts,
+            "body": {"cmd": 15},
+        }
+
+        def _match(data: dict) -> bool:
+            return (
+                data.get("deviceSn") == device_sn
+                and isinstance(data.get("body"), dict)
+                and "cds" in data["body"]
+            )
 
         try:
-            label = "aiomqtt:query_plans"
-            self._mqtt_race_start(label)
-            try:
-                async with aiomqtt.Client(**params) as mqtt:
-                    await mqtt.subscribe(dev_topic, qos=1)
-                    await mqtt.publish(cmd_topic, payload, qos=1)
-                    try:
-                        async with asyncio.timeout(10):
-                            async for message in mqtt.messages:
-                                try:
-                                    data = json.loads(message.payload)
-                                except (json.JSONDecodeError, TypeError):
-                                    continue
-                                if (
-                                    data.get("deviceSn") == device_sn
-                                    and isinstance(data.get("body"), dict)
-                                    and "cds" in data["body"]
-                                ):
-                                    return data["body"]["cds"]
-                    except TimeoutError:
-                        _LOGGER.warning(
-                            "Timeout waiting for plan query response from %s",
-                            device_sn,
-                        )
-            finally:
-                self._mqtt_race_end(label)
+            result = await self._mqtt_session.publish_and_wait(payload, _match, timeout=10.0)
+            return result["body"]["cds"]
+        except TimeoutError:
+            _LOGGER.warning("Timeout waiting for plan query response from %s", device_sn)
         except Exception:
             _LOGGER.exception("Failed to query plans for %s", device_sn)
-
         return []
 
     async def async_update_transfer_switch_plan(
@@ -622,71 +718,40 @@ class JackeryAPI:
         self,
         device_sn: str,
     ) -> list[dict]:
-        """Query circuit properties from Transfer Switch via MQTT.
-
-        Opens a short-lived MQTT connection, sends a QueryCircuitProperty
-        command, and waits for the response containing the ``cir`` list.
-        """
+        """Query circuit properties from Transfer Switch via persistent MQTT session."""
         if aiomqtt is None:
             raise RuntimeError("aiomqtt is not installed")
+        if self._mqtt_session is None:
+            raise RuntimeError("MQTT session not started - call start_mqtt_session() first")
 
-        params, user_id = self._build_mqtt_params()
-
-        cmd_topic = f"hb/app/{user_id}/command"
-        dev_topic = f"hb/app/{user_id}/device"
         ts = int(time.time() * 1000)
-        payload = json.dumps(
-            {
-                "deviceSn": device_sn,
-                "id": ts,
-                "version": 0,
-                "messageType": "QueryCircuitProperty",
-                "actionId": 7,
-                "timestamp": ts,
-                "body": {"cmd": 10},
-            },
-            separators=(",", ":"),
-        )
+        payload = {
+            "deviceSn": device_sn,
+            "id": ts,
+            "version": 0,
+            "messageType": "QueryCircuitProperty",
+            "actionId": 7,
+            "timestamp": ts,
+            "body": {"cmd": 10},
+        }
+
+        def _match(data: dict) -> bool:
+            # Only accept actionId=7 (full QueryCircuitProperty response).
+            # actionId=1 are unsolicited partial power-only pushes - ignore them.
+            return (
+                data.get("deviceSn") == device_sn
+                and data.get("actionId") == 7
+                and isinstance(data.get("body"), dict)
+                and "cir" in data["body"]
+            )
 
         try:
-            label = "aiomqtt:query_circuits"
-            self._mqtt_race_start(label)
-            try:
-                async with aiomqtt.Client(**params) as mqtt:
-                    await mqtt.subscribe(dev_topic, qos=1)
-                    await mqtt.publish(cmd_topic, payload, qos=1)
-                    try:
-                        async with asyncio.timeout(10):
-                            async for message in mqtt.messages:
-                                try:
-                                    data = json.loads(message.payload)
-                                except (json.JSONDecodeError, TypeError):
-                                    continue
-                                # actionId=7 is the QueryCircuitProperty response (full metadata).
-                                # actionId=1 are unsolicited partial power-only pushes — ignore them.
-                                if (
-                                    data.get("deviceSn") == device_sn
-                                    and data.get("actionId") == 7
-                                    and isinstance(data.get("body"), dict)
-                                    and "cir" in data["body"]
-                                ):
-                                    return data["body"]["cir"]
-                                # TEMP: log filtered cir messages to confirm fix is working
-                                if data.get("deviceSn") == device_sn and "cir" in (data.get("body") or {}):
-                                    _LOGGER.debug(
-                                        "MQTT-RACE-CHECK: ignoring cir message with actionId=%d from %s",
-                                        data.get("actionId"), device_sn,
-                                    )
-                    except TimeoutError:
-                        _LOGGER.warning(
-                            "Timeout waiting for circuit query response from %s",
-                            device_sn,
-                        )
-            finally:
-                self._mqtt_race_end(label)
+            result = await self._mqtt_session.publish_and_wait(payload, _match, timeout=10.0)
+            return result["body"]["cir"]
+        except TimeoutError:
+            _LOGGER.warning("Timeout waiting for circuit query response from %s", device_sn)
         except Exception:
             _LOGGER.exception("Failed to query circuits for %s", device_sn)
-
         return []
 
     async def async_set_circuit_switch(
