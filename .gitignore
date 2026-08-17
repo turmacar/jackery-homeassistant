@@ -215,6 +215,10 @@ secrets.yaml
 # Project notes
 PROJECT_CONTEXT.md
 TODO.md
+MQTT_SESSION_ROUTER_CONTEXT.md
+MQTT_SESSION_ROUTER_TODO.md
+explore_api.py
+explore_mqtt.py
 
 # MQTT sniffer
 mqtt_sniffer.py

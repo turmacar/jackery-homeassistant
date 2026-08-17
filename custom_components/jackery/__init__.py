@@ -243,11 +243,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_config_entry_first_refresh()
         coordinators[device_id] = coordinator
 
-        # Real-time circuit power: merge incoming pc values from actionId=1 push
         if is_transfer_switch and device_sn:
+            # Real-time circuit power + total op/ip from Transfer Switch actionId=1 pushes.
             api.register_push_handler(
                 device_sn,
                 _make_circuit_push_handler(circuit_cache, coordinator),
+            )
+        elif device_sn:
+            # Real-time scalar fields (acpsp, ip, it, …) from portable device pushes.
+            api.register_push_handler(
+                device_sn,
+                _make_device_push_handler(coordinator),
             )
 
     hass.data[DOMAIN][entry.entry_id] = {
@@ -265,35 +271,69 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _make_device_push_handler(coordinator) -> callable:
+    """Return a push handler that merges scalar DevicePropertyChange fields."""
+    def _handle(data: dict) -> None:
+        if data.get("messageType") != "DevicePropertyChange":
+            return
+        body = data.get("body")
+        if not isinstance(body, dict) or coordinator.data is None:
+            return
+        changed = False
+        new_data = dict(coordinator.data)
+        for key, val in body.items():
+            if isinstance(val, (int, float)) and new_data.get(key) != val:
+                new_data[key] = val
+                changed = True
+        if changed:
+            coordinator.data = new_data
+            coordinator.async_update_listeners()
+    return _handle
+
+
 def _make_circuit_push_handler(circuit_cache: dict, coordinator) -> callable:
-    """Return a push handler that merges circuit pc values from actionId=1 pushes."""
+    """Return a push handler that merges Transfer Switch push data."""
     def _handle(data: dict) -> None:
         if data.get("actionId") != 1:
             return
         body = data.get("body")
-        if not isinstance(body, dict) or "cir" not in body:
+        if not isinstance(body, dict) or coordinator.data is None:
             return
-        cached = circuit_cache["circuits"]
-        if not cached:
-            return
-        updates = {
-            c["idx"]: c["pc"]
-            for c in body["cir"]
-            if "idx" in c and "pc" in c
-        }
-        if not updates:
-            return
+
         changed = False
-        for circuit in cached:
-            new_pc = updates.get(circuit["idx"])
-            if new_pc is not None and circuit.get("pc") != new_pc:
-                circuit["pc"] = new_pc
+        new_data = dict(coordinator.data)
+
+        # Merge top-level power fields without waiting for the next HTTP poll.
+        for field in ("op", "ip"):
+            val = body.get(field)
+            if val is not None and new_data.get(field) != val:
+                new_data[field] = val
                 changed = True
-        if changed and coordinator.data is not None:
-            new_data = dict(coordinator.data)
-            new_data["_circuits"] = list(cached)
-            coordinator.async_set_updated_data(new_data)
-            _LOGGER.debug("Circuit push: updated pc for %d circuits", len(updates))
+
+        # Merge per-circuit pc values from partial push.
+        if "cir" in body:
+            cached = circuit_cache["circuits"]
+            if cached:
+                updates = {
+                    c["idx"]: c["pc"]
+                    for c in body["cir"]
+                    if "idx" in c and "pc" in c
+                }
+                cir_changed = False
+                for circuit in cached:
+                    new_pc = updates.get(circuit["idx"])
+                    if new_pc is not None and circuit.get("pc") != new_pc:
+                        circuit["pc"] = new_pc
+                        cir_changed = True
+                if cir_changed:
+                    new_data["_circuits"] = list(cached)
+                    changed = True
+                    _LOGGER.debug("Circuit push: updated pc for %d circuits", len(updates))
+
+        if changed:
+            # Direct assignment avoids resetting the coordinator's scheduled HTTP poll timer
+            coordinator.data = new_data
+            coordinator.async_update_listeners()
     return _handle
 
 

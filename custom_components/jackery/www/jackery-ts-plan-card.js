@@ -811,7 +811,9 @@ class JackeryPlanCard extends HTMLElement {
   }
 }
 
-customElements.define("jackery-ts-plan-card", JackeryPlanCard);
+if (!customElements.get("jackery-ts-plan-card")) {
+  customElements.define("jackery-ts-plan-card", JackeryPlanCard);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
