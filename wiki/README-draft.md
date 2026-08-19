@@ -63,17 +63,17 @@ Full documentation is available in the [Wiki](../../wiki):
 
 | Page | Contents |
 |------|----------|
-| [Charging Plans](../../wiki/Charging-Plans) | Scheduled charge/discharge plan details and protocol |
-| [Controls](../../wiki/Controls) | Switches, selects, numbers, and text entities |
-| [Device Availability](../../wiki/Device-Availability) | Which entities are created for which devices |
-| [Example Automations](../../wiki/Example-Automations) | Sample automations for common use cases |
-| [Lovelace Cards](../../wiki/Lovelace-Cards) | Custom card setup and features |
-| [Portable Devices](../../wiki/Portable-Devices) | Portable station features, charging behavior, and quirks |
-| [Properties](../../wiki/Properties) | Raw device property key reference |
 | [Sensors](../../wiki/Sensors) | All sensor and binary sensor reference tables |
+| [Controls](../../wiki/Controls) | Switches, selects, numbers, and text entities |
 | [Services](../../wiki/Services) | HA services for Transfer Switch plan management |
-| [Supported Devices](../../wiki/Supported-Devices) | Known supported hardware and compatibility notes |
+| [Portable Devices](../../wiki/Portable-Devices) | Portable station features, charging behavior, and quirks |
 | [Transfer Switch](../../wiki/Transfer-Switch) | Smart Transfer Switch working modes, circuits, fault diagnostics |
+| [Charging Plans](../../wiki/Charging-Plans) | Scheduled charge/discharge plan details and protocol |
+| [Lovelace Cards](../../wiki/Lovelace-Cards) | Custom card setup and features |
+| [Supported Devices](../../wiki/Supported-Devices) | Known supported hardware and compatibility notes |
+| [Device Availability](../../wiki/Device-Availability) | Which entities are created for which devices |
+| [Properties](../../wiki/Properties) | Raw device property key reference |
+| [Example Automations](../../wiki/Example-Automations) | Sample automations for common use cases |
 | [Troubleshooting](../../wiki/Troubleshooting) | Common issues and debug logging |
 
 ## Lovelace Cards
