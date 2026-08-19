@@ -516,29 +516,40 @@ class JackeryAPI:
         property_slug: str,
         value: str | int,
     ) -> None:
-        """Set a device property through Jackery's MQTT control channel."""
-        if socketry is None:
-            raise RuntimeError("socketry is not installed")
+        """Set a portable device property via the persistent MQTT session.
 
-        async with self._control_write_lock:
-            client = await self._async_get_control_client()
+        Routes all writes through JackeryMqttSession so that controls and the
+        push/poll subscription share one MQTT connection (client ID
+        ``{userId}@APP``).  Using a separate socketry control connection with the
+        same client ID would kick out the persistent session, causing the Jackery
+        backend to treat it as a competing app login and invalidate the REST
+        token (error 10403).
+        """
+        if aiomqtt is None:
+            raise RuntimeError("aiomqtt is not installed")
+        if self._mqtt_session is None:
+            raise RuntimeError("MQTT session not started - call start_mqtt_session() first")
 
-            for attempt in range(2):
-                try:
-                    device = self._resolve_control_device(client, device_id, device_sn)
-                    await device.set_property(property_slug, value, wait=True)
-                    return
-                except (
-                    socketry.AuthenticationError,
-                    socketry.MqttError,
-                    socketry.SocketryError,
-                    KeyError,
-                ):
-                    if attempt == 1:
-                        await self._async_reset_control_client(client)
-                        raise
-                    await self._async_reset_control_client(client)
-                    client = await self._async_get_control_client()
+        # Look up action_id and prop_key from our own control spec registry first
+        # (avoids depending on socketry's internal property definitions at write time).
+        from .protocol import CONTROL_SPECS_BY_SLUG
+        spec = CONTROL_SPECS_BY_SLUG.get(property_slug)
+        if spec is not None and spec.action_id is not None:
+            action_id = spec.action_id
+            prop_key = spec.prop_key
+        elif socketry is not None:
+            # Fallback: use socketry to resolve unknown slugs (e.g. future device props).
+            from socketry.properties import resolve as _socketry_resolve
+            setting = _socketry_resolve(property_slug)
+            if setting is None or setting.action_id is None:
+                raise KeyError(f"Unknown or read-only property slug: {property_slug!r}")
+            action_id = setting.action_id
+            prop_key = setting.prop_key
+        else:
+            raise KeyError(f"Cannot resolve property slug without socketry: {property_slug!r}")
+
+        body = {prop_key: int(value)}
+        await self.async_send_device_command(device_id, device_sn, action_id, body)
 
     def _build_mqtt_params(self) -> tuple[dict, str]:
         """Build aiomqtt connection params from REST API login credentials.
@@ -556,7 +567,7 @@ class JackeryAPI:
         }
         return _socketry_mqtt_params(creds), self._mqtt_user_id
 
-    async def async_send_transfer_switch_command(
+    async def async_send_device_command(
         self,
         device_id: str,
         device_sn: str,
@@ -676,7 +687,7 @@ class JackeryAPI:
         plan: dict,
     ) -> None:
         """Update an existing charge/discharge plan on the Transfer Switch."""
-        await self.async_send_transfer_switch_command(
+        await self.async_send_device_command(
             device_id,
             device_sn,
             14,  # actionId for UpdateElectricityStrategy
@@ -691,7 +702,7 @@ class JackeryAPI:
         plan: dict,
     ) -> None:
         """Create a new charge/discharge plan on the Transfer Switch."""
-        await self.async_send_transfer_switch_command(
+        await self.async_send_device_command(
             device_id,
             device_sn,
             13,  # actionId for InsertElectricityStrategy
@@ -706,7 +717,7 @@ class JackeryAPI:
         pid: str,
     ) -> None:
         """Delete a charge/discharge plan on the Transfer Switch."""
-        await self.async_send_transfer_switch_command(
+        await self.async_send_device_command(
             device_id,
             device_sn,
             15,  # actionId for DeleteElectricityStrategy
@@ -762,7 +773,7 @@ class JackeryAPI:
         on: bool,
     ) -> None:
         """Toggle a circuit on/off on the Transfer Switch."""
-        await self.async_send_transfer_switch_command(
+        await self.async_send_device_command(
             device_id,
             device_sn,
             9,  # actionId for circuit switch

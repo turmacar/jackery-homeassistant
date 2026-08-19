@@ -1021,10 +1021,10 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
     # ---- Transfer Switch command routing tests ----
 
     async def test_switch_pss_routes_via_transfer_switch_command(self) -> None:
-        """PSS switch should use async_send_transfer_switch_command, not async_set_device_property."""
+        """PSS switch should use async_send_device_command, not async_set_device_property."""
         coordinator = TrackingCoordinator({"pss": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = switch.JackerySwitchEntity(
@@ -1036,17 +1036,17 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         await entity.async_turn_on()
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 4, {"cmd": 4, "pss": 1},
         )
         api.async_set_device_property.assert_not_awaited()
         self.assertTrue(entity.is_on)
 
     async def test_switch_ups_routes_via_transfer_switch_command(self) -> None:
-        """UPS switch should use async_send_transfer_switch_command."""
+        """UPS switch should use async_send_device_command."""
         coordinator = TrackingCoordinator({"ups": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = switch.JackerySwitchEntity(
@@ -1058,16 +1058,16 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         await entity.async_turn_on()
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 6, {"cmd": 6, "ups": 1},
         )
         api.async_set_device_property.assert_not_awaited()
 
     async def test_switch_rc_routes_via_transfer_switch_command(self) -> None:
-        """RC (Force Charge) switch should use async_send_transfer_switch_command."""
+        """RC (Force Charge) switch should use async_send_device_command."""
         coordinator = TrackingCoordinator({"rc": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = switch.JackerySwitchEntity(
@@ -1079,15 +1079,15 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         await entity.async_turn_on()
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 3, {"cmd": 5, "rc": 1},
         )
         api.async_set_device_property.assert_not_awaited()
 
-        api.async_send_transfer_switch_command.reset_mock()
+        api.async_send_device_command.reset_mock()
         await entity.async_turn_off()
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 3, {"cmd": 5, "rc": 0},
         )
 
@@ -1095,7 +1095,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         """Non-Transfer-Switch keys should use the standard socketry path."""
         coordinator = TrackingCoordinator({"oac": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = switch.JackerySwitchEntity(
@@ -1108,13 +1108,13 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         await entity.async_turn_on()
 
         api.async_set_device_property.assert_awaited_once()
-        api.async_send_transfer_switch_command.assert_not_awaited()
+        api.async_send_device_command.assert_not_awaited()
 
     async def test_select_en_routes_via_transfer_switch_command(self) -> None:
-        """Working Mode select should use async_send_transfer_switch_command."""
+        """Working Mode select should use async_send_device_command."""
         coordinator = TrackingCoordinator({"en": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = select.JackerySelectEntity(
@@ -1126,7 +1126,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         await entity.async_select_option("Scheduled Tasks")
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 20, {"cmd": 20, "en": 1},
         )
         api.async_set_device_property.assert_not_awaited()
@@ -1136,7 +1136,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         """Non-Transfer-Switch select keys should use the standard path."""
         coordinator = TrackingCoordinator({"lm": 0})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = select.JackerySelectEntity(
@@ -1149,13 +1149,13 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         await entity.async_select_option("high")
 
         api.async_set_device_property.assert_awaited_once()
-        api.async_send_transfer_switch_command.assert_not_awaited()
+        api.async_send_device_command.assert_not_awaited()
 
     async def test_number_ddt_routes_via_transfer_switch_command(self) -> None:
-        """DDT (Backup Reserve) number should use async_send_transfer_switch_command."""
+        """DDT (Backup Reserve) number should use async_send_device_command."""
         coordinator = TrackingCoordinator({"ddt": 25})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = number.JackeryNumberEntity(
@@ -1167,7 +1167,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         await entity.async_set_native_value(50)
 
-        api.async_send_transfer_switch_command.assert_awaited_once_with(
+        api.async_send_device_command.assert_awaited_once_with(
             "device-1", "serial-1", 19, {"cmd": 19, "ddt": 50},
         )
         api.async_set_device_property.assert_not_awaited()
@@ -1177,7 +1177,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         """Non-Transfer-Switch number keys should use the standard path."""
         coordinator = TrackingCoordinator({"pm": 20})
         api = types.SimpleNamespace(
-            async_send_transfer_switch_command=AsyncMock(),
+            async_send_device_command=AsyncMock(),
             async_set_device_property=AsyncMock(),
         )
         entity = number.JackeryNumberEntity(
@@ -1190,7 +1190,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         await entity.async_set_native_value(15)
 
         api.async_set_device_property.assert_awaited_once()
-        api.async_send_transfer_switch_command.assert_not_awaited()
+        api.async_send_device_command.assert_not_awaited()
 
 
 class HomeAssistantStubInstallerTests(unittest.TestCase):

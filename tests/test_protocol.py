@@ -195,6 +195,57 @@ class ProtocolTests(unittest.TestCase):
         )
         self.assertFalse(protocol.is_supported_property(properties, "charging_plan"))
 
+    def test_portable_control_specs_have_action_ids(self) -> None:
+        """All portable writable properties must carry a non-None action_id."""
+        portable_keys = ("oac", "odc", "odcu", "odcc", "sfc", "lm", "cs", "lps", "ast", "pm", "sltb")
+        for key in portable_keys:
+            spec = protocol.control_spec(key)
+            self.assertIsNotNone(spec.action_id, f"{key} is missing action_id")
+
+    def test_transfer_switch_control_specs_have_no_action_id(self) -> None:
+        """Transfer Switch properties must NOT carry a portable action_id."""
+        ts_keys = ("ddt", "en", "ups", "pss", "rc")
+        for key in ts_keys:
+            spec = protocol.control_spec(key)
+            self.assertIsNone(spec.action_id, f"{key} should not have a portable action_id")
+
+    def test_sltb_prop_key_is_slt(self) -> None:
+        """Screen timeout writes 'slt' to the MQTT body, not 'sltb'."""
+        spec = protocol.control_spec("sltb")
+        self.assertEqual(spec.prop_key, "slt")
+
+    def test_prop_key_defaults_to_key(self) -> None:
+        """Controls without a write_key should use the property key verbatim."""
+        spec = protocol.control_spec("oac")
+        self.assertEqual(spec.prop_key, "oac")
+
+    def test_control_specs_by_slug_reverse_lookup(self) -> None:
+        """Slug-indexed lookup must resolve back to the correct property key."""
+        self.assertEqual(protocol.CONTROL_SPECS_BY_SLUG["ac"].key, "oac")
+        self.assertEqual(protocol.CONTROL_SPECS_BY_SLUG["screen-timeout"].key, "sltb")
+        self.assertEqual(protocol.CONTROL_SPECS_BY_SLUG["screen-timeout"].prop_key, "slt")
+
+    def test_is_transfer_switch_device_by_model_code(self) -> None:
+        """modelCode 2001 must always classify as Transfer Switch."""
+        self.assertTrue(protocol.is_transfer_switch_device({"modelCode": 2001}))
+        self.assertFalse(protocol.is_transfer_switch_device({"modelCode": 13}))
+        self.assertFalse(protocol.is_transfer_switch_device({}))
+
+    def test_is_transfer_switch_device_by_properties(self) -> None:
+        """Unknown modelCode but Transfer Switch property markers → classified as TS."""
+        # Flattened coordinator data (post-flatten)
+        self.assertTrue(protocol.is_transfer_switch_device({"modelCode": 9999}, {"ac1_rb": 80}))
+        self.assertTrue(protocol.is_transfer_switch_device({}, {"fz_gs": 0}))
+        # Raw HTTP properties (pre-flatten)
+        self.assertTrue(protocol.is_transfer_switch_device({}, {"ac1": {"rb": 80}}))
+        self.assertTrue(protocol.is_transfer_switch_device({}, {"cds": [], "fz": {}}))
+        # Portable properties should not trigger TS classification
+        self.assertFalse(protocol.is_transfer_switch_device({}, {"rb": 90, "oac": 1}))
+
+    def test_is_transfer_switch_device_model_code_takes_priority(self) -> None:
+        """modelCode 2001 must win even without marker properties."""
+        self.assertTrue(protocol.is_transfer_switch_device({"modelCode": 2001}, {}))
+
 
 if __name__ == "__main__":
     unittest.main()

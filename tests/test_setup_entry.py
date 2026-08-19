@@ -164,6 +164,15 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
     const_mod = types.ModuleType(f"{TEST_PACKAGE}.const")
     const_mod.DOMAIN = "jackery"
     const_mod.POLLING_INTERVAL_SEC = 60
+    const_mod.SENSOR_DESCRIPTIONS = ()
+    const_mod.BINARY_SENSOR_DESCRIPTIONS = ()
+
+    protocol_mod = types.ModuleType(f"{TEST_PACKAGE}.protocol")
+    protocol_mod.CONTROL_SPECS = {}
+    protocol_mod.CONTROL_SPECS_BY_SLUG = {}
+    protocol_mod.is_transfer_switch_device = lambda device_info=None, properties=None: (
+        (device_info or {}).get("modelCode") == 2001
+    )
 
     api_mod = types.ModuleType(f"{TEST_PACKAGE}.api")
 
@@ -261,6 +270,7 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
     api_mod.JackeryAuthenticationError = JackeryAuthenticationError
 
     _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.const", const_mod)
+    _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.protocol", protocol_mod)
     _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.api", api_mod)
 
 

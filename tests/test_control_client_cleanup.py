@@ -204,7 +204,17 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
     const_mod = types.ModuleType(f"{TEST_PACKAGE}.const")
     const_mod.DOMAIN = "jackery"
     const_mod.POLLING_INTERVAL_SEC = 60
+    const_mod.SENSOR_DESCRIPTIONS = ()
+    const_mod.BINARY_SENSOR_DESCRIPTIONS = ()
     _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.const", const_mod)
+
+    protocol_mod = types.ModuleType(f"{TEST_PACKAGE}.protocol")
+    protocol_mod.CONTROL_SPECS = {}
+    protocol_mod.CONTROL_SPECS_BY_SLUG = {}
+    protocol_mod.is_transfer_switch_device = lambda device_info=None, properties=None: (
+        (device_info or {}).get("modelCode") == 2001
+    )
+    _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.protocol", protocol_mod)
 
 
 dependency_stubs: dict[str, object] = {}
@@ -306,56 +316,20 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         api.socketry = self.original_socketry
 
-    async def test_retry_stops_discarded_control_client(self) -> None:
-        """Retrying a failed control write should close the discarded client."""
-        auth_error = type("AuthenticationError", (Exception,), {})
-        mqtt_error = type("MqttError", (Exception,), {})
-        socketry_error = type("SocketryError", (Exception,), {})
-
-        failed_device = types.SimpleNamespace(
-            set_property=AsyncMock(side_effect=auth_error("stale session"))
-        )
-        recovered_device = types.SimpleNamespace(set_property=AsyncMock())
-
-        failed_client = types.SimpleNamespace(
-            fetch_devices=AsyncMock(),
-            devices=[{"devId": "device-1", "devSn": "serial-1"}],
-            device=lambda serial: failed_device,
-            stop=AsyncMock(),
-        )
-        recovered_client = types.SimpleNamespace(
-            fetch_devices=AsyncMock(),
-            devices=[{"devId": "device-1", "devSn": "serial-1"}],
-            device=lambda serial: recovered_device,
-            stop=AsyncMock(),
-        )
-
-        mock_client_class = unittest.mock.Mock(side_effect=[failed_client, recovered_client])
-        api.socketry = types.SimpleNamespace(
-            AuthenticationError=auth_error,
-            MqttError=mqtt_error,
-            SocketryError=socketry_error,
-            Client=mock_client_class,
-        )
+    async def test_portable_property_routes_through_persistent_session(self) -> None:
+        """async_set_device_property must use the persistent MQTT session, not the
+        socketry control client, to avoid competing MQTT connections (10403 loop).
+        """
         jackery_api = api.JackeryAPI("user@example.com", "password")
-        jackery_api._mqtt_user_id = "test-user"
-        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
-        jackery_api._token = "test-token"
+        jackery_api.async_send_device_command = AsyncMock()
+        jackery_api._mqtt_session = types.SimpleNamespace()  # non-None sentinel
 
-        await jackery_api.async_set_device_property(
-            "device-1",
-            "serial-1",
-            "ac",
-            1,
+        await jackery_api.async_set_device_property("device-1", "serial-1", "ac", 1)
+
+        # Must delegate to the persistent-session command path, never socketry Client()
+        jackery_api.async_send_device_command.assert_awaited_once_with(
+            "device-1", "serial-1", 4, {"oac": 1}
         )
-
-        self.assertEqual(mock_client_class.call_count, 2)
-        failed_client.fetch_devices.assert_awaited_once()
-        recovered_client.fetch_devices.assert_awaited_once()
-        failed_client.stop.assert_awaited_once()
-        recovered_client.stop.assert_not_awaited()
-        recovered_device.set_property.assert_awaited_once_with("ac", 1, wait=True)
-        self.assertIs(jackery_api._control_client, recovered_client)
 
     async def test_get_control_client_closes_uncached_client_when_fetch_fails(self) -> None:
         """A fetch failure should close the new control client and avoid caching it."""
@@ -408,60 +382,17 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
         failed_client.stop.assert_awaited_once()
         self.assertIsNone(jackery_api._control_client)
 
-    async def test_retry_resets_cached_control_client_on_final_failure(self) -> None:
-        """Final control-write failure should close and clear the cached client."""
-        auth_error = type("AuthenticationError", (Exception,), {})
-        mqtt_error = type("MqttError", (Exception,), {})
-        socketry_error = type("SocketryError", (Exception,), {})
-
-        first_device = types.SimpleNamespace(
-            set_property=AsyncMock(side_effect=auth_error("stale session"))
-        )
-        second_device = types.SimpleNamespace(
-            set_property=AsyncMock(side_effect=auth_error("still stale"))
-        )
-
-        first_client = types.SimpleNamespace(
-            fetch_devices=AsyncMock(),
-            devices=[{"devId": "device-1", "devSn": "serial-1"}],
-            device=lambda serial: first_device,
-            stop=AsyncMock(),
-        )
-        second_client = types.SimpleNamespace(
-            fetch_devices=AsyncMock(),
-            devices=[{"devId": "device-1", "devSn": "serial-1"}],
-            device=lambda serial: second_device,
-            stop=AsyncMock(),
-        )
-
-        mock_client_class = unittest.mock.Mock(side_effect=[first_client, second_client])
-        api.socketry = types.SimpleNamespace(
-            AuthenticationError=auth_error,
-            MqttError=mqtt_error,
-            SocketryError=socketry_error,
-            Client=mock_client_class,
-        )
+    async def test_portable_property_write_key_override(self) -> None:
+        """sltb reads as 'sltb' but must be written as 'slt' in the MQTT body."""
         jackery_api = api.JackeryAPI("user@example.com", "password")
-        jackery_api._mqtt_user_id = "test-user"
-        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
-        jackery_api._token = "test-token"
+        jackery_api.async_send_device_command = AsyncMock()
+        jackery_api._mqtt_session = types.SimpleNamespace()
 
-        with self.assertRaises(auth_error):
-            await jackery_api.async_set_device_property(
-                "device-1",
-                "serial-1",
-                "ac",
-                1,
-            )
+        await jackery_api.async_set_device_property("device-1", "serial-1", "screen-timeout", 10)
 
-        self.assertEqual(mock_client_class.call_count, 2)
-        first_client.fetch_devices.assert_awaited_once()
-        second_client.fetch_devices.assert_awaited_once()
-        first_client.stop.assert_awaited_once()
-        second_client.stop.assert_awaited_once()
-        first_device.set_property.assert_awaited_once_with("ac", 1, wait=True)
-        second_device.set_property.assert_awaited_once_with("ac", 1, wait=True)
-        self.assertIsNone(jackery_api._control_client)
+        jackery_api.async_send_device_command.assert_awaited_once_with(
+            "device-1", "serial-1", 8, {"slt": 10}
+        )
 
     async def test_async_close_stops_cached_control_client(self) -> None:
         """Closing the API should close and clear the cached control client."""
@@ -550,39 +481,16 @@ class ControlClientCleanupTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(hass.data["jackery"], {})
 
-    async def test_control_client_never_calls_socketry_login(self) -> None:
-        """Client(creds) must be used directly; Client.login() must never be called.
-
-        socketry.Client.login() performs a full HTTP login that rotates the shared
-        auth token, invalidating HA's HTTP session and causing 10403 cascades on
-        every concurrent poll.  This test will fail if the old login() path is
-        ever reintroduced.
+    async def test_portable_property_raises_without_mqtt_session(self) -> None:
+        """async_set_device_property must raise RuntimeError when no MQTT session
+        is available, surfacing the misconfiguration clearly instead of opening a
+        competing socketry connection that would trigger 10403 cascades.
         """
-        mock_device = types.SimpleNamespace(set_property=AsyncMock())
-        mock_client = types.SimpleNamespace(
-            fetch_devices=AsyncMock(),
-            devices=[{"devId": "device-1", "devSn": "serial-1"}],
-            device=lambda serial: mock_device,
-            stop=AsyncMock(),
-        )
-        mock_login = AsyncMock()
-        mock_client_class = unittest.mock.Mock(return_value=mock_client)
-        mock_client_class.login = mock_login
-
-        api.socketry = types.SimpleNamespace(
-            AuthenticationError=Exception,
-            MqttError=Exception,
-            SocketryError=Exception,
-            Client=mock_client_class,
-        )
         jackery_api = api.JackeryAPI("user@example.com", "password")
-        jackery_api._mqtt_user_id = "test-user"
-        jackery_api._mqtt_password_b64 = "cGFzc3dvcmQ="
-        jackery_api._token = "test-token"
+        # _mqtt_session is None by default (not started)
 
-        await jackery_api.async_set_device_property("device-1", "serial-1", "ac", 1)
-
-        mock_login.assert_not_called()
+        with self.assertRaises(RuntimeError, msg="MQTT session not started"):
+            await jackery_api.async_set_device_property("device-1", "serial-1", "ac", 1)
 
     async def test_circuit_query_uses_session_and_ignores_actionid_1(self) -> None:
         """async_query_transfer_switch_circuits must route through the MQTT session
@@ -896,7 +804,7 @@ class HttpSessionAsyncTests(unittest.IsolatedAsyncioTestCase):
         api.aiomqtt = self.original_aiomqtt
 
     async def test_mqtt_command_routes_through_persistent_session(self) -> None:
-        """async_send_transfer_switch_command must publish via _mqtt_session."""
+        """async_send_device_command must publish via _mqtt_session."""
         device_sn = "ts-sn"
         action_id = 9
 
@@ -917,7 +825,7 @@ class HttpSessionAsyncTests(unittest.IsolatedAsyncioTestCase):
             publish_and_wait=fake_publish_and_wait
         )
 
-        await jackery_api.async_send_transfer_switch_command(
+        await jackery_api.async_send_device_command(
             "device-1", device_sn, action_id, {"cmd": 12, "idx": 1, "sw": 1}
         )
 

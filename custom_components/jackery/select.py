@@ -204,7 +204,7 @@ class JackerySelectEntity(CoordinatorEntity, SelectEntity):
             if transfer_switch_cmd is not None:
                 action_id, cmd = transfer_switch_cmd
                 int_value = self._attr_options.index(option)
-                await self._api.async_send_transfer_switch_command(
+                await self._api.async_send_device_command(
                     self._device_id,
                     self._device_sn,
                     action_id,

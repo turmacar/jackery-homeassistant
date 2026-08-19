@@ -236,7 +236,7 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
             box_cmd = TRANSFER_SWITCH_COMMANDS.get(key)
             if box_cmd is not None:
                 action_id, cmd = box_cmd
-                await self._api.async_send_transfer_switch_command(
+                await self._api.async_send_device_command(
                     self._device_id,
                     self._device_sn,
                     action_id,

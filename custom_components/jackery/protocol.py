@@ -18,20 +18,31 @@ class JackeryControlSpec:
     icon: str
     read_keys: tuple[str, ...] = ()
     options: tuple[str, ...] = ()
+    # MQTT action_id for portable device commands (None = Transfer Switch only).
+    action_id: int | None = None
+    # Override the property key written in the MQTT body (e.g. sltb reads "slt").
+    write_key: str | None = None
 
     @property
     def state_keys(self) -> tuple[str, ...]:
         """Keys that can expose the current state for this control."""
         return self.read_keys or (self.key,)
 
+    @property
+    def prop_key(self) -> str:
+        """Property key to use in MQTT command body."""
+        return self.write_key or self.key
+
 
 CONTROL_SPECS: dict[str, JackeryControlSpec] = {
+    # Portable device properties - action_ids from APK PortableControlFormat.java
     "oac": JackeryControlSpec(
         key="oac",
         slug="ac",
         name="AC Output",
         platform="switch",
         icon="mdi:power-plug",
+        action_id=4,
     ),
     "odc": JackeryControlSpec(
         key="odc",
@@ -39,6 +50,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="DC Output",
         platform="switch",
         icon="mdi:power",
+        action_id=1,
     ),
     "odcu": JackeryControlSpec(
         key="odcu",
@@ -46,6 +58,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="USB Output",
         platform="switch",
         icon="mdi:usb-port",
+        action_id=2,
     ),
     "odcc": JackeryControlSpec(
         key="odcc",
@@ -53,6 +66,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="DC Car Output",
         platform="switch",
         icon="mdi:car",
+        action_id=3,
     ),
     "sfc": JackeryControlSpec(
         key="sfc",
@@ -60,6 +74,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="Super Fast Charge",
         platform="switch",
         icon="mdi:flash",
+        action_id=13,
     ),
     "lm": JackeryControlSpec(
         key="lm",
@@ -68,6 +83,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="select",
         icon="mdi:lightbulb",
         options=("off", "low", "high", "sos"),
+        action_id=7,
     ),
     "cs": JackeryControlSpec(
         key="cs",
@@ -76,6 +92,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="select",
         icon="mdi:battery-charging",
         options=("fast", "mute"),
+        action_id=10,
     ),
     "lps": JackeryControlSpec(
         key="lps",
@@ -84,6 +101,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="select",
         icon="mdi:battery-heart-variant",
         options=("full", "eco"),
+        action_id=11,
     ),
     "ast": JackeryControlSpec(
         key="ast",
@@ -91,6 +109,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="Auto Shutdown",
         platform="number",
         icon="mdi:timer-off-outline",
+        action_id=9,
     ),
     "pm": JackeryControlSpec(
         key="pm",
@@ -98,6 +117,7 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="Energy Saving",
         platform="number",
         icon="mdi:leaf",
+        action_id=12,
     ),
     "sltb": JackeryControlSpec(
         key="sltb",
@@ -106,7 +126,13 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="number",
         icon="mdi:monitor-screenshot",
         read_keys=("sltb", "slt"),
+        action_id=8,
+        write_key="slt",
     ),
+    # Transfer Switch properties - action_ids are set per-command in the platform
+    # modules (TRANSFER_SWITCH_COMMANDS / _NUMBER_COMMANDS / _SELECT_COMMANDS).
+    # action_id is intentionally omitted here; these never go through
+    # async_set_device_property.
     "ddt": JackeryControlSpec(
         key="ddt",
         slug="ddt",
@@ -145,6 +171,11 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
     ),
 }
 
+# Slug-indexed reverse lookup for fast action_id resolution in api.py.
+CONTROL_SPECS_BY_SLUG: dict[str, JackeryControlSpec] = {
+    spec.slug: spec for spec in CONTROL_SPECS.values()
+}
+
 CHARGING_PLAN_SWITCH_DP = "107"
 CHARGING_PLAN_DATA_DP = "108"
 CHARGING_PLAN_REPEAT_TO_MASK: dict[str, str] = {
@@ -169,6 +200,9 @@ _CHARGING_PLAN_TIME_RANGE = re.compile(
 )
 _MODEL_NAME_SANITIZER = re.compile(r"[^a-z0-9]+")
 
+# Properties that only appear on Transfer Switch devices (both raw and flattened forms).
+_TRANSFER_SWITCH_MARKER_KEYS = frozenset({"ac1", "fz", "cds", "cir", "ac1_rb", "fz_gs"})
+
 
 def _property_keys(properties: Mapping[str, object] | None) -> set[str]:
     """Return the set of reported property keys."""
@@ -184,6 +218,24 @@ def _normalize_model_name(value: object) -> str:
 
     normalized = _MODEL_NAME_SANITIZER.sub(" ", value.casefold())
     return " ".join(normalized.split())
+
+
+def is_transfer_switch_device(
+    device_info: Mapping[str, object] | None = None,
+    properties: Mapping[str, object] | None = None,
+) -> bool:
+    """Return whether this device should be treated as a Transfer Switch.
+
+    Checks modelCode == 2001 first, then falls back to property-based detection
+    for forward-compat with future Box variants.  Works with both raw properties
+    (pre-flatten, has "ac1"/"fz" keys) and flattened coordinator data
+    (has "ac1_rb"/"fz_gs" keys).
+    """
+    if device_info and device_info.get("modelCode") == 2001:
+        return True
+    if properties:
+        return bool(_property_keys(properties) & _TRANSFER_SWITCH_MARKER_KEYS)
+    return False
 
 
 def has_known_charging_plan_model(device_info: Mapping[str, object] | None) -> bool:

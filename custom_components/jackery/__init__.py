@@ -18,7 +18,8 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.util import dt as dt_util
 
 from .api import JackeryAPI, JackeryAuthenticationError
-from .const import DOMAIN, POLLING_INTERVAL_SEC
+from .const import BINARY_SENSOR_DESCRIPTIONS, DOMAIN, POLLING_INTERVAL_SEC, SENSOR_DESCRIPTIONS
+from .protocol import CONTROL_SPECS, is_transfer_switch_device
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -62,12 +63,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not devices:
         _LOGGER.warning("No Jackery devices found for this account.")
 
+    # Build set of all property keys that have known entity descriptors for
+    # unknown-property detection after first coordinator refresh.
+    _known_keys: frozenset[str] = frozenset(
+        {d.key for d in SENSOR_DESCRIPTIONS}
+        | {d.key for d in BINARY_SENSOR_DESCRIPTIONS}
+        | set(CONTROL_SPECS)
+        | {f"{s}_pack_{i}_rb" for s in ("ac1", "ac2") for i in range(1, 6)}
+        | {"last_updated", "_plans", "_circuits"}
+    )
+
     coordinators = {}
     for device in devices:
         device_id = device["devId"]
         device_name = device.get("devName", f"Jackery Device {device_id}")
         device_sn = device.get("devSn", "")
-        is_transfer_switch = device.get("modelCode") == 2001
+        is_transfer_switch = is_transfer_switch_device(device)
+
+        _LOGGER.debug(
+            "Setting up device: %s (id=%s, sn=%s, modelCode=%s, type=%s)",
+            device_name,
+            device_id,
+            device_sn or "(none)",
+            device.get("modelCode"),
+            "Transfer Switch" if is_transfer_switch else "portable",
+        )
 
         # Persistent plan cache - survives across coordinator update cycles.
         # Populated by MQTT query on a throttled schedule; injected into every
@@ -242,6 +262,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await coordinator.async_config_entry_first_refresh()
         coordinators[device_id] = coordinator
+
+        if coordinator.data:
+            # Re-check after first refresh in case modelCode was unrecognised.
+            if not is_transfer_switch and is_transfer_switch_device(device, coordinator.data):
+                is_transfer_switch = True
+                _LOGGER.info(
+                    "Device %s (modelCode=%s) reclassified as Transfer Switch "
+                    "based on reported properties - modelCode list may need updating.",
+                    device_name,
+                    device.get("modelCode"),
+                )
+
+            reported = {k for k in coordinator.data if not k.startswith("_")}
+            _LOGGER.debug(
+                "Device %s reported %d properties: %s",
+                device_name,
+                len(reported),
+                sorted(reported),
+            )
+            unknown = reported - _known_keys - {"last_updated"}
+            if unknown:
+                _LOGGER.info(
+                    "Device %s reports %d unmapped propert%s: %s - "
+                    "consider adding entity descriptors for these.",
+                    device_name,
+                    len(unknown),
+                    "y" if len(unknown) == 1 else "ies",
+                    sorted(unknown),
+                )
 
         if is_transfer_switch and device_sn:
             # Real-time circuit power + total op/ip from Transfer Switch actionId=1 pushes.
