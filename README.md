@@ -1,6 +1,6 @@
 > This is a community-maintained project. Issue responses may be slow, but pull requests are welcome! Reasonable PRs will be reviewed, tested, and merged.
 
-> **Known issue:** This integration currently does not support accounts registered in the EU.
+> **Note:** This integration targets the **Jackery** app backend (used by portable stations like the Explorer series and Smart Transfer Switch). If your device is managed by the **Jackery Home** app (e.g. HomePower 2000 Ultra, SolarVault), that app uses a different API; see [iLLixM/jackery_home_cloud-ha](https://github.com/iLLixM/jackery_home_cloud-ha) for a community integration targeting that backend.
 
 # Jackery Home Assistant Integration
 
