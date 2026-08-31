@@ -73,6 +73,12 @@ Pack sensors only appear when the pack is physically connected. After a pack is 
 
 When a portable is connected to the Transfer Switch, the portable's own Battery Status sensor reports Idle even when it is actively charging. The authoritative charging status is the **AC1 Battery Status** or **AC2 Battery Status** sensor on the Transfer Switch device.
 
+**AC1/AC2 Battery Status only reflects the AC1/AC2 port's grid-facing flow** (charging from grid vs. discharging to the house through the Transfer Switch), not a true net reading. Confirmed by testing: when solar input exceeds the house load, the status still reports "Discharging" - it does not account for a connected device's own solar input. Use the **AC1/AC2 Solar Input Power** sensor alongside Battery Status to see the full picture; there is no single field that reports true net (grid + solar) charge direction.
+
+### Solar Input Per Slot
+
+The Transfer Switch's `ac1`/`ac2` property object does not itself report solar input. The integration instead matches the slot's connected device serial number (`ac1.sn`) against the account's other devices and borrows that device's own **Solar Panel Input Power** reading, exposed as **AC1 Solar Input Power** / **AC2 Solar Input Power**. This only appears when the connected device actually reports solar input.
+
 ## Fault Diagnostics
 
 The Transfer Switch reports fault conditions through the `fz` property object. The integration flattens these into individual entities.

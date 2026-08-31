@@ -35,7 +35,7 @@ class JackeryControlSpec:
 
 
 CONTROL_SPECS: dict[str, JackeryControlSpec] = {
-    # Portable device properties - action_ids from APK PortableControlFormat.java
+    # Portable device properties
     "oac": JackeryControlSpec(
         key="oac",
         slug="ac",

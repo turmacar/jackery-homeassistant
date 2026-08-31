@@ -79,6 +79,7 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac1_bs": "Battery state of the device connected to AC1.",
     "ac1_bi": "Whether a battery device is connected to AC1.",
     "ac1_bp_count": "Number of add-on battery packs connected to the AC1 device.",
+    "ac1_acpsp": "Power input from solar panels connected to the AC1 device.",
     "ac2_rb": "Battery level of the device connected to AC2.",
     "ac2_op": "Output power from the device connected to AC2.",
     "ac2_ip": "Input power to the device connected to AC2.",
@@ -87,6 +88,7 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac2_bs": "Battery state of the device connected to AC2.",
     "ac2_bi": "Whether a battery device is connected to AC2.",
     "ac2_bp_count": "Number of add-on battery packs connected to the AC2 device.",
+    "ac2_acpsp": "Power input from solar panels connected to the AC2 device.",
     **{f"{slot}_pack_{i}_rb": f"Battery level of add-on pack {i} connected to {slot.upper()}." for slot in ("ac1", "ac2") for i in range(1, 6)},
     # Explorer 5000 diagnostic sensors
     "ss": "Solar panel input type: None, High Voltage, Low Voltage, or both.",
@@ -436,6 +438,15 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     JackerySensorEntityDescription(
+        key="ac1_acpsp",
+        name="AC1 Solar Input Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
+    ),
+    JackerySensorEntityDescription(
         key="ac1_ot",
         name="AC1 Remaining Time",
         native_unit_of_measurement=UnitOfTime.HOURS,
@@ -490,6 +501,15 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_acpsp",
+        name="AC2 Solar Input Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda value: value / 10.0,
     ),
     JackerySensorEntityDescription(
         key="ac2_ot",

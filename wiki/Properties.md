@@ -49,7 +49,7 @@ Properties marked **MQTT only** are not included in the HTTP snapshot and requir
 
 | Field | Type | Description | Integration Entity |
 |-------|------|-------------|-------------------|
-| `acpsp` | int | Solar panel power (/10 = W) | Not mapped (per-slot solar) |
+| `acpsp` | int | Solar panel power (/10 = W) | Borrowed from connected device by serial match - see AC1/AC2 Solar Input Power sensor |
 | `bi` | int | Battery connected (0=no, 1=yes) | AC1/AC2 Connected sensor |
 | `bp` | list | Add-on battery packs (see BatteryPack below) | AC1/AC2 Battery Packs count + per-pack sensors |
 | `bs` | int | Battery status (0=Idle, 1=Charging, 2=Discharging, 3=Fault) | AC1/AC2 Battery Status sensor |
@@ -84,7 +84,7 @@ Properties marked **MQTT only** are not included in the HTTP snapshot and requir
 | `moc` | int | Module overload (0=OK, 1=mains overload, 2=storage overload) | Module Overload sensor |
 | `ntc` | int | NTC temperature fault | Temperature Fault binary sensor |
 | `ol` | int | Cover open fault | Cover Open binary sensor |
-| `rtc` | int | RTC fault (observed in live data; not in APK model) | RTC Fault binary sensor |
+| `rtc` | int | RTC fault | RTC Fault binary sensor |
 | `ta1` | int | AC1 temperature alarm (0=OK, 1=high, 2=low) | AC1 Temperature Alarm sensor |
 | `ta2` | int | AC2 temperature alarm (0=OK, 1=high, 2=low) | AC2 Temperature Alarm sensor |
 
@@ -183,5 +183,7 @@ Properties marked **MQTT only** are not included in the HTTP snapshot and requir
 - `**` - Does not appear to be a functional feature, and/or not found in the Jackery app.
 - "Not mapped" - exists in the protocol but are not yet a priority.
 - The `bs` (Battery Status) property on a portable reports `0` (Idle) when the device is connected to and managed by a Transfer Switch. Use the Transfer Switch's `ac1.bs` / `ac2.bs` instead. See [Portable Devices](Portable-Devices#transfer-switch-connection).
+- The Transfer Switch's `ac1`/`ac2` object does not report its own `acpsp`. The integration synthesizes AC1/AC2 Solar Input Power by matching `ac1.sn`/`ac2.sn` against the account's other devices and reading that device's own `acpsp`.
+- `ac1.bs`/`ac2.bs` and the portable's own `pc` (Parallel Connection) only reflect grid-facing charge/discharge through the Transfer Switch's AC port - confirmed by testing, they still report "Discharging" even when a connected device's solar input exceeds the house load. Neither is a true net (grid + solar) charge indicator.
 - Some portable properties (`en`, `dt`, `dl`, `cl`) only appear or become meaningful when `box=1` (connected to a Transfer Switch).
 - The `sltb` property is the read key for screen timeout; the write command uses a different key (`slt`).

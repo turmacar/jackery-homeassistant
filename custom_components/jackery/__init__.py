@@ -225,6 +225,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             pack_num = i + 1
                             properties[f"{slot}_pack_{pack_num}_rb"] = pack.get("rb")
                             properties[f"{slot}_pack_{pack_num}_sn"] = pack.get("sn", "")
+                    # The Transfer Switch's ac1/ac2 sub-object doesn't report its own
+                    # solar input - borrow it from the connected portable's own
+                    # `acpsp` property (matched by serial number) so each slot shows
+                    # solar input for whatever device is actually plugged into it.
+                    connected_sn = ac.get("sn")
+                    if connected_sn:
+                        for other_device in devices:
+                            if other_device.get("devSn") != connected_sn:
+                                continue
+                            other_coordinator = coordinators.get(other_device["devId"])
+                            if other_coordinator and other_coordinator.data:
+                                solar = other_coordinator.data.get("acpsp")
+                                if solar is not None:
+                                    properties[f"{slot}_acpsp"] = solar
+                            break
 
             # last_updated reflects the last *successful* HTTP fetch so a stale
             # fallback is timestamped for the UI.

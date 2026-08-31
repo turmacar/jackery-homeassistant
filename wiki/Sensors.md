@@ -30,6 +30,8 @@ See [Device Availability](Device-Availability) for a full breakdown of which sen
 
 **Note on Battery Status:** When a portable is connected to and managed by the Smart Transfer Switch, its Battery Status sensor reports Idle even while actively charging. The authoritative charging status in that configuration is the Transfer Switch's AC1 Battery Status or AC2 Battery Status sensor. See [Portable Devices](Portable-Devices#transfer-switch-connection).
 
+**Note on solar and Battery Status:** AC1/AC2 Battery Status (and the portable's own Parallel Connection) only reflect grid-facing charge/discharge through the Transfer Switch. Neither accounts for a connected device's own solar input - confirmed by testing, status still reports "Discharging" even when solar input exceeds the house load. See AC1/AC2 Solar Input Power below for the actual solar contribution.
+
 ## Transfer Switch Sensors
 
 These sensors are only created for the Smart Transfer Switch.
@@ -60,6 +62,7 @@ These sensors are only created for the Smart Transfer Switch.
 | AC1 Output Power | Output power from AC1 | W |
 | AC1 Pack N Battery | Battery level of add-on pack N on AC1 (up to 5) | % |
 | AC1 Remaining Time | Estimated remaining runtime for AC1 | hours |
+| AC1 Solar Input Power | Solar input power reported by the device connected to AC1 (borrowed from that device's own sensor) | W |
 | AC1 Time to Full | Estimated time to full charge for AC1 | hours |
 
 ### AC2 Battery Slot
