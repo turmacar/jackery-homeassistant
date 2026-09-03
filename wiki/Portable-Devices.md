@@ -27,6 +27,15 @@ The `pc` property reports whether the device is connected to another unit for pa
 
 Solar panel input power is reported via the `cip` property. Not all models include solar ports.
 
+### Deferred Controls
+
+Some reported settings remain read-only because their behavior can't be verified without testing:
+
+- `acdt` is a writable AC delay timer, but its supported range and app behavior need hardware verification.
+- `bpc` is battery-pack-related, but its exact meaning and range remain unresolved.
+- `dl`, `cl`, and `bc` are battery boundary values that the app writes together. The app derives `bc` from `cl`, so independent number controls could produce invalid combinations.
+- `odcPrioSoc` has a write command, but its supported range and interaction with output-priority settings need hardware verification.
+
 ## Charging Plans (DP 107/108)
 
 Portable Plus models support a simple charging plan for controlling when the device charges. This is separate from the Transfer Switch scheduled plan system.

@@ -56,6 +56,10 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "uo": "Device timezone offset from UTC (converted to hours).",
     "pss": "Whether power is supplied by grid or station (batteries/solar).",
     "last_updated": "Timestamp of the last successful data poll from Jackery API.",
+    "ds": "Total solar energy generated.",
+    "dh": "Total household energy consumed.",
+    "de": "Total battery energy discharged.",
+    "dg": "Total grid energy consumed.",
     # Fault sensors (Transfer Switch)
     "fz_gs": "Mains power connection status.",
     "fz_ec1": "AC1 energy storage error code.",
@@ -80,6 +84,8 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac1_bi": "Whether a battery device is connected to AC1.",
     "ac1_bp_count": "Number of add-on battery packs connected to the AC1 device.",
     "ac1_acpsp": "Power input from solar panels connected to the AC1 device.",
+    "ac1_ss": "Solar panel input type at AC1: None, High Voltage, Low Voltage, or both.",
+    "ac1_trb": "Total remaining battery energy stored in the AC1 device.",
     "ac2_rb": "Battery level of the device connected to AC2.",
     "ac2_op": "Output power from the device connected to AC2.",
     "ac2_ip": "Input power to the device connected to AC2.",
@@ -89,6 +95,8 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ac2_bi": "Whether a battery device is connected to AC2.",
     "ac2_bp_count": "Number of add-on battery packs connected to the AC2 device.",
     "ac2_acpsp": "Power input from solar panels connected to the AC2 device.",
+    "ac2_ss": "Solar panel input type at AC2: None, High Voltage, Low Voltage, or both.",
+    "ac2_trb": "Total remaining battery energy stored in the AC2 device.",
     **{f"{slot}_pack_{i}_rb": f"Battery level of add-on pack {i} connected to {slot.upper()}." for slot in ("ac1", "ac2") for i in range(1, 6)},
     # Explorer 5000 diagnostic sensors
     "ss": "Solar panel input type: None, High Voltage, Low Voltage, or both.",
@@ -107,6 +115,7 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "pmb": "At least one output port is active.",
     # Switches
     "rc": "Forces the battery to charge from grid power regardless of mode or schedule.",
+    "wps": "WiFi Protected Setup (WPS) button for quick WiFi network connection.",
     # Selects
     "en": "Automatic Charging keeps batteries full for power outages. Scheduled Tasks follows plans. Self Consumption prioritizes battery/solar.",
     "lm": "Controls the built-in LED light mode.",
@@ -116,6 +125,49 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "ast": "Minutes of inactivity before the device powers off automatically.",
     "pm": "Minutes before the device enters energy saving (reduced standby draw).",
     "sltb": "Minutes before the screen turns off.",
+    "autoDt": "Backup reserve % for Automatic Charging mode.",
+    "cdsDt": "Backup reserve % for Scheduled Tasks mode.",
+    "selfDt": "Backup reserve % for Self Consumption mode.",
+    # Transfer Switch network diagnostics
+    "wsig": "WiFi signal strength (RSSI) in dBm.",
+    "wname": "SSID of the connected WiFi network.",
+    "wip": "IP address assigned to the Transfer Switch.",
+    "mac": "MAC address of the Transfer Switch WiFi interface.",
+    # Portable per-port power sensors
+    "oacPw": "AC outlet power draw (W).",
+    "usba1": "USB-A port 1 power draw (W).",
+    "usba2": "USB-A port 2 power draw (W).",
+    "usba3": "USB-A port 3 power draw (W).",
+    "usbc1": "USB-C port 1 power draw (W).",
+    "usbc2": "USB-C port 2 power draw (W).",
+    "usbc3": "USB-C port 3 power draw (W).",
+    "cop": "Car (12V) output power (W).",
+    "iacPw": "AC input power (W) - portable device variant (may be reported instead of acip).",
+    "ipalPw": "Power received from parallel-connected devices (W).",
+    "opalPw": "Power sent to parallel-connected devices (W).",
+    "oac2": "Second AC outlet status.",
+    # Portable diagnostic sensors
+    "acps": "AC Power Status.",
+    "iac": "Whether AC Input is Connected.",
+    "idc": "Whether DC Input is Connected.",
+    "wss": "WiFi Signal Status.",
+    "tt": "Temperature Threshold.",
+    "acmode": "AC Output Mode: Normal or Timer.",
+    "accd": "AC Output Countdown remaining in seconds.",
+    "odct": "DC Output Countdown remaining in seconds.",
+    "odcut": "USB Output Countdown remaining in seconds.",
+    "odcct": "DC Car Output Countdown remaining in seconds.",
+    "oact": "AC Output Countdown remaining in seconds.",
+    # Portable limit sensors
+    "dt": "Portable Backup Reserve percentage.",
+    "dl": "Discharge Limit percentage.",
+    "cl": "Charge Limit percentage.",
+    "bc": "Battery Cutoff percentage.",
+    "odcPrioSoc": "DC Priority SOC Threshold percentage.",
+    # Portable priority and memory controls
+    "outPrio": "Whether AC Output Priority is enabled.",
+    "odcPrio": "Whether DC Output Priority is enabled.",
+    "dhg_recall": "Whether Discharge Memory restores the previous output state after startup.",
 }
 
 BATTERY_STATUS_LABELS: dict[int, str] = {
@@ -166,6 +218,11 @@ PARALLEL_CONNECTION_LABELS: dict[int, str] = {
     0: "None",
     1: "Charge",
     2: "Discharge",
+}
+
+AC_OUTPUT_MODE_LABELS: dict[int, str] = {
+    0: "Normal",
+    1: "Timer",
 }
 
 MAINS_FAULT_LABELS: dict[int, str] = {
@@ -369,6 +426,39 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         icon="mdi:clock",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # Energy counters (Transfer Switch)
+    JackerySensorEntityDescription(
+        key="ds",
+        name="Solar Generation",
+        native_unit_of_measurement="Wh",
+        icon="mdi:solar-power-variant",
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="dh",
+        name="House Consumption",
+        native_unit_of_measurement="Wh",
+        icon="mdi:home-lightning-bolt",
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="de",
+        name="Battery Discharge",
+        native_unit_of_measurement="Wh",
+        icon="mdi:battery-arrow-down",
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="dg",
+        name="Grid Consumption",
+        native_unit_of_measurement="Wh",
+        icon="mdi:transmission-tower",
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     # Fault sub-object fields with multiple states
     JackerySensorEntityDescription(
         key="fz_gs",
@@ -557,6 +647,63 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    JackerySensorEntityDescription(
+        key="ac1_ss",
+        name="AC1 Solar Type",
+        icon="mdi:solar-power-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(SOLAR_TYPE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="ac1_trb",
+        name="AC1 Total Battery",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_ss",
+        name="AC2 Solar Type",
+        icon="mdi:solar-power-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(SOLAR_TYPE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="ac2_trb",
+        name="AC2 Total Battery",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Transfer Switch network diagnostics
+    JackerySensorEntityDescription(
+        key="wsig",
+        name="WiFi Signal Strength",
+        native_unit_of_measurement="dBm",
+        icon="mdi:wifi",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="wname",
+        name="WiFi Network Name",
+        icon="mdi:wifi",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="wip",
+        name="WiFi IP Address",
+        icon="mdi:ip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="mac",
+        name="MAC Address",
+        icon="mdi:identifier",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     # Per-pack battery level sensors (up to 5 packs per slot)
     *[
         JackerySensorEntityDescription(
@@ -570,6 +717,198 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         for slot in ("ac1", "ac2")
         for i in range(1, 6)
     ],
+    # Portable per-port power sensors
+    JackerySensorEntityDescription(
+        key="oacPw",
+        name="AC Output Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usba1",
+        name="USB-A Port 1 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usba2",
+        name="USB-A Port 2 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usba3",
+        name="USB-A Port 3 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usbc1",
+        name="USB-C Port 1 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usbc2",
+        name="USB-C Port 2 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="usbc3",
+        name="USB-C Port 3 Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="cop",
+        name="Car (12V) Output Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="iacPw",
+        name="AC Input Power (Portable)",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="ipalPw",
+        name="Parallel Input Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="opalPw",
+        name="Parallel Output Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Portable diagnostic sensors
+    JackerySensorEntityDescription(
+        key="acps",
+        name="AC Power Status",
+        icon="mdi:power-plug-check",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="wss",
+        name="WiFi Signal Status",
+        icon="mdi:wifi",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="tt",
+        name="Temperature Threshold",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        icon="mdi:thermometer",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="acmode",
+        name="AC Output Mode",
+        icon="mdi:power-plug-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=_fault_label(AC_OUTPUT_MODE_LABELS),
+    ),
+    JackerySensorEntityDescription(
+        key="accd",
+        name="AC Output Countdown",
+        native_unit_of_measurement="s",
+        icon="mdi:timer",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="odct",
+        name="DC Output Countdown",
+        native_unit_of_measurement="s",
+        icon="mdi:timer",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="odcut",
+        name="USB Output Countdown",
+        native_unit_of_measurement="s",
+        icon="mdi:timer",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="odcct",
+        name="DC Car Output Countdown",
+        native_unit_of_measurement="s",
+        icon="mdi:timer",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="oact",
+        name="AC Output Countdown",
+        native_unit_of_measurement="s",
+        icon="mdi:timer",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Portable limit sensors
+    JackerySensorEntityDescription(
+        key="dt",
+        name="Portable Backup Reserve",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="dl",
+        name="Discharge Limit",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="cl",
+        name="Charge Limit",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="bc",
+        name="Battery Cutoff",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="odcPrioSoc",
+        name="DC Priority SOC Threshold",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 )
 
 # Binary sensor descriptions
@@ -698,6 +1037,29 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
         name="RTC Fault",
         device_class=BinarySensorDeviceClass.PROBLEM,
         icon="mdi:clock-alert-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Portable binary sensors
+    BinarySensorEntityDescription(
+        key="oac2",
+        name="Second AC Outlet",
+        device_class=BinarySensorDeviceClass.POWER,
+        icon="mdi:power-plug",
+        entity_category=None,
+    ),
+    # Portable diagnostic sensors
+    BinarySensorEntityDescription(
+        key="iac",
+        name="AC Input Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:power-plug",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="idc",
+        name="DC Input Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:car-battery",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )

@@ -168,6 +168,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
         """Stub sensor state class enum."""
 
         MEASUREMENT = "measurement"
+        TOTAL = "total"
 
     class EntityCategory:
         """Stub entity category enum."""
@@ -1168,7 +1169,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         await entity.async_set_native_value(50)
 
         api.async_send_device_command.assert_awaited_once_with(
-            "device-1", "serial-1", 19, {"cmd": 19, "ddt": 50},
+            "device-1", "serial-1", 16, {"cmd": 19, "ddt": 50},
         )
         api.async_set_device_property.assert_not_awaited()
         self.assertEqual(entity.native_value, 50.0)

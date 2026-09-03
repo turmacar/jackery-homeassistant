@@ -96,6 +96,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
         """Stub sensor state class enum."""
 
         MEASUREMENT = "measurement"
+        TOTAL = "total"
 
     class EntityCategory:
         """Stub entity category enum."""

@@ -76,6 +76,30 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         icon="mdi:flash",
         action_id=13,
     ),
+    "outPrio": JackeryControlSpec(
+        key="outPrio",
+        slug="output-priority",
+        name="AC Output Priority",
+        platform="switch",
+        icon="mdi:power-plug-battery",
+        action_id=47,
+    ),
+    "odcPrio": JackeryControlSpec(
+        key="odcPrio",
+        slug="dc-output-priority",
+        name="DC Output Priority",
+        platform="switch",
+        icon="mdi:car-battery",
+        action_id=48,
+    ),
+    "dhg_recall": JackeryControlSpec(
+        key="dhg_recall",
+        slug="discharge-memory",
+        name="Discharge Memory",
+        platform="switch",
+        icon="mdi:memory",
+        action_id=53,
+    ),
     "lm": JackeryControlSpec(
         key="lm",
         slug="light",
@@ -140,6 +164,27 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         platform="number",
         icon="mdi:battery-lock",
     ),
+    "autoDt": JackeryControlSpec(
+        key="autoDt",
+        slug="autoDt",
+        name="Auto Mode Backup Reserve",
+        platform="number",
+        icon="mdi:battery-lock",
+    ),
+    "cdsDt": JackeryControlSpec(
+        key="cdsDt",
+        slug="cdsDt",
+        name="Scheduled Mode Backup Reserve",
+        platform="number",
+        icon="mdi:battery-lock",
+    ),
+    "selfDt": JackeryControlSpec(
+        key="selfDt",
+        slug="selfDt",
+        name="Self Consumption Mode Backup Reserve",
+        platform="number",
+        icon="mdi:battery-lock",
+    ),
     "en": JackeryControlSpec(
         key="en",
         slug="en",
@@ -168,6 +213,13 @@ CONTROL_SPECS: dict[str, JackeryControlSpec] = {
         name="Force Charge",
         platform="switch",
         icon="mdi:battery-charging-100",
+    ),
+    "wps": JackeryControlSpec(
+        key="wps",
+        slug="wps",
+        name="Weather Protection",
+        platform="switch",
+        icon="mdi:weather-lightning",
     ),
 }
 

@@ -26,13 +26,27 @@ from .protocol import (
 from .plan import JackeryPlanSwitch, _get_plans, has_plans
 from .circuit import JackeryCircuitSwitch, has_circuits, _get_circuits, get_logical_circuits
 
-SWITCH_KEYS = ("oac", "odc", "odcu", "odcc", "sfc", "pss", "ups", "rc")
+SWITCH_KEYS = (
+    "oac",
+    "odc",
+    "odcu",
+    "odcc",
+    "sfc",
+    "outPrio",
+    "odcPrio",
+    "dhg_recall",
+    "pss",
+    "ups",
+    "rc",
+    "wps",
+)
 
 # Transfer Switch commands: key -> (action_id, cmd)
 TRANSFER_SWITCH_COMMANDS: dict[str, tuple[int, int]] = {
     "pss": (4, 4),
     "ups": (6, 6),
     "rc": (3, 5),
+    "wps": (22, 26),
 }
 
 def _switch_desc(key: str, **kwargs) -> EntityDescription:
@@ -45,9 +59,13 @@ SWITCH_DESCRIPTIONS: dict[str, EntityDescription] = {
     "odcu": _switch_desc("odcu", entity_category=None),
     "odcc": _switch_desc("odcc", entity_category=None),
     "sfc": _switch_desc("sfc", entity_category=EntityCategory.CONFIG),
+    "outPrio": _switch_desc("outPrio", entity_category=EntityCategory.CONFIG),
+    "odcPrio": _switch_desc("odcPrio", entity_category=EntityCategory.CONFIG),
+    "dhg_recall": _switch_desc("dhg_recall", entity_category=EntityCategory.CONFIG),
     "pss": _switch_desc("pss", entity_category=None),
     "ups": _switch_desc("ups", entity_category=None),
     "rc": _switch_desc("rc", entity_category=None),
+    "wps": _switch_desc("wps", entity_category=EntityCategory.CONFIG),
 }
 CHARGING_PLAN_SWITCH_DESCRIPTION = EntityDescription(
     key=CHARGING_PLAN_SWITCH,

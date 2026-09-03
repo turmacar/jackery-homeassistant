@@ -18,6 +18,8 @@ The Transfer Switch operates in one of three working modes, controlled by the **
 
 Each mode has its own backup reserve percentage (the minimum battery level held in reserve for outages). The backup reserve for the currently active mode is shown in the **Backup Reserve** number entity and can be adjusted there directly.
 
+The integration also exposes **Auto Mode Backup Reserve**, **Scheduled Mode Backup Reserve**, and **Self Consumption Mode Backup Reserve** number entities. The Jackery app doesn't provide controls for these, they're either ignored or used to set the global **Backup Reserve** value. Probably.
+
 See [Charging Plans](Charging-Plans) for details on setting up scheduled charge/discharge plans used by Scheduled Tasks mode.
 
 ## Grid / Station Toggle
@@ -31,6 +33,32 @@ The **UPS Mode** switch enables approximately 20ms grid-to-battery switchover on
 ## Force Charge
 
 The **Force Charge** switch forces the battery to charge from the grid regardless of the current working mode or scheduled plans. Useful for quickly topping up before an expected outage.
+
+## Energy Counters
+
+The Transfer Switch reports cumulative energy totals in watt-hours:
+
+| Sensor | Property | Description |
+|--------|----------|-------------|
+| Solar Generation | `ds` | Total solar energy generated |
+| House Consumption | `dh` | Total household energy consumed |
+| Battery Discharge | `de` | Total battery energy discharged |
+| Grid Consumption | `dg` | Total grid energy consumed |
+
+## WiFi Controls and Diagnostics
+
+The **WiFi Protected Setup** switch controls the Transfer Switch's WPS quick-connect function.
+
+The following diagnostic sensors expose the network information reported by the device:
+
+| Sensor | Property |
+|--------|----------|
+| WiFi Signal Strength | `wsig` |
+| WiFi Network Name | `wname` |
+| WiFi IP Address | `wip` |
+| MAC Address | `mac` |
+
+The protocol also contains `wpc` and `storm` fields, but their behavior is undocumented and not found in the app. The `fz.loc` line-overload field is also unknown.
 
 ## Circuits
 
@@ -60,6 +88,8 @@ The Jackery Transfer Switch does *NOT* monitor or show the physical status of th
 ## AC1 and AC2 Battery Slots
 
 The Transfer Switch has two AC output ports (AC1 and AC2) that can each connect to a Jackery portable power station. The integration creates a set of diagnostic sensors for each connected device.
+
+Each slot includes a **Solar Type** sensor that reports None, High Voltage, Low Voltage, or High & Low Voltage. The **Total Battery** sensor reports the combined percentage across the connected station and all of its add-on battery packs.
 
 See [Sensors - AC1 and AC2 Battery Slots](Sensors#ac1-battery-slot) for the full sensor list.
 

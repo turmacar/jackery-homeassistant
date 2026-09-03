@@ -65,6 +65,9 @@ class ProtocolTests(unittest.TestCase):
             "odcu": "usb",
             "odcc": "car",
             "sfc": "sfc",
+            "outPrio": "output-priority",
+            "odcPrio": "dc-output-priority",
+            "dhg_recall": "discharge-memory",
             "lm": "light",
             "cs": "charge-speed",
             "lps": "battery-protection",
@@ -197,10 +200,31 @@ class ProtocolTests(unittest.TestCase):
 
     def test_portable_control_specs_have_action_ids(self) -> None:
         """All portable writable properties must carry a non-None action_id."""
-        portable_keys = ("oac", "odc", "odcu", "odcc", "sfc", "lm", "cs", "lps", "ast", "pm", "sltb")
+        portable_keys = (
+            "oac",
+            "odc",
+            "odcu",
+            "odcc",
+            "sfc",
+            "outPrio",
+            "odcPrio",
+            "dhg_recall",
+            "lm",
+            "cs",
+            "lps",
+            "ast",
+            "pm",
+            "sltb",
+        )
         for key in portable_keys:
             spec = protocol.control_spec(key)
             self.assertIsNotNone(spec.action_id, f"{key} is missing action_id")
+
+    def test_priority_and_memory_controls_use_apk_action_ids(self) -> None:
+        """Priority and memory switches should use APK-verified action IDs."""
+        self.assertEqual(protocol.control_spec("outPrio").action_id, 47)
+        self.assertEqual(protocol.control_spec("odcPrio").action_id, 48)
+        self.assertEqual(protocol.control_spec("dhg_recall").action_id, 53)
 
     def test_transfer_switch_control_specs_have_no_action_id(self) -> None:
         """Transfer Switch properties must NOT carry a portable action_id."""

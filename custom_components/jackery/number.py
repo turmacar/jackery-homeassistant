@@ -22,11 +22,14 @@ from .const import DOMAIN, ENTITY_HELP_TEXT
 from homeassistant.const import EntityCategory
 from .protocol import control_spec, supported_keys
 
-NUMBER_KEYS = ("ast", "pm", "sltb", "ddt")
+NUMBER_KEYS = ("ast", "pm", "sltb", "ddt", "autoDt", "cdsDt", "selfDt")
 
 # Transfer Switch commands: key -> (action_id, cmd)
 TRANSFER_SWITCH_NUMBER_COMMANDS: dict[str, tuple[int, int]] = {
-    "ddt": (19, 19),
+    "ddt": (16, 19),
+    "autoDt": (5, 7),
+    "cdsDt": (5, 7),
+    "selfDt": (5, 7),
 }
 
 def _number_desc(key: str, **kwargs) -> EntityDescription:
@@ -38,14 +41,23 @@ NUMBER_DESCRIPTIONS: dict[str, EntityDescription] = {
     "pm": _number_desc("pm", entity_category=EntityCategory.CONFIG),
     "sltb": _number_desc("sltb", entity_category=EntityCategory.CONFIG),
     "ddt": _number_desc("ddt", entity_category=None),
+    "autoDt": _number_desc("autoDt", entity_category=EntityCategory.CONFIG),
+    "cdsDt": _number_desc("cdsDt", entity_category=EntityCategory.CONFIG),
+    "selfDt": _number_desc("selfDt", entity_category=EntityCategory.CONFIG),
 }
 NUMBER_RANGES: dict[str, tuple[float, float, float]] = {
     key: (0, 1440, 1) for key in ("ast", "pm", "sltb")
 }
 NUMBER_RANGES["ddt"] = (1, 90, 1)
+NUMBER_RANGES["autoDt"] = (1, 90, 1)
+NUMBER_RANGES["cdsDt"] = (1, 90, 1)
+NUMBER_RANGES["selfDt"] = (1, 90, 1)
 
 NUMBER_UNITS: dict[str, str | None] = {
     "ddt": "%",
+    "autoDt": "%",
+    "cdsDt": "%",
+    "selfDt": "%",
 }
 
 
