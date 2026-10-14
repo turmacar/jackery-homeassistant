@@ -13,6 +13,8 @@ logger:
 
 Logs can be viewed under **Settings** > **System** > **Logs**.
 
+Credentials and device secrets (`token`, `mqttPassWord`, `deviceSecret`, `randomSalt`) are masked in the debug output.
+
 ## Common Issues
 
 ### Authentication Failed
@@ -30,6 +32,15 @@ Logs can be viewed under **Settings** > **System** > **Logs**.
 
 - Check the Home Assistant logs for errors related to `custom_components.jackery`.
 - Verify the device has a stable internet connection.
+- If the device's entities show unavailable, see [Device Offline From the Jackery Cloud](#device-offline-from-the-jackery-cloud).
+
+### Device Offline From the Jackery Cloud
+
+The Jackery cloud keeps returning a device's last known values after the device loses its internet connection. The integration reads the cloud's online status, so an offline device shows **unavailable** and its **Cloud Connection** sensor turns off. After 10 minutes a Repair issue appears under **Settings** > **System** > **Repairs**.
+
+Some stations (observed on the Explorer 5000 Plus and Explorer 300 Plus) do not reconnect by themselves after an internet outage. To restore them, re-enable Wi-Fi on the device and re-add it in the Jackery app. The Smart Transfer Switch reconnects on its own. No fault codes are reported while offline.
+
+The Repair issue clears on the next poll after the device is back online. For a phone notification as well, see [Example Automations](Example-Automations#device-offline-notification).
 
 ### Plan or Circuit Entities Missing
 

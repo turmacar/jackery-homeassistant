@@ -18,6 +18,8 @@ See [Device Availability](Device-Availability) for a full breakdown of which sen
 | DC Input Power | Current DC/car input power | W |
 | Error Code | Reported device error code | integer |
 | Last Updated | Timestamp of last successful data refresh | ISO 8601 |
+| Last Offline | When the Jackery cloud last saw the device disconnect | ISO 8601 |
+| Last Online | When the Jackery cloud last saw the device connect | ISO 8601 |
 | Output Power | Current power output | W |
 | Parallel Connection | None / Charge / Discharge | text |
 | Remaining Battery | Current battery level | % |
@@ -95,6 +97,7 @@ See [Transfer Switch](Transfer-Switch) for more detail on circuit behavior.
 
 | Sensor | Description |
 |--------|-------------|
+| Cloud Connection | Whether the Jackery cloud reports the device as connected (all devices) |
 | AC1 Communication Fault | AC1 communication fault (Transfer Switch) |
 | AC2 Communication Fault | AC2 communication fault (Transfer Switch) |
 | AC Output | AC output active |

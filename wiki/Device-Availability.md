@@ -63,6 +63,12 @@ Per-pack battery level sensors (`AC1 Pack N Battery`) appear only when a pack is
 
 Circuit power sensors and on/off switches appear for Transfer Switch devices. Split-phase pairs are automatically detected and combined into single entities.
 
+## Cloud Connection and Offline Devices
+
+Every device gets a **Cloud Connection** binary sensor, plus **Last Online** and **Last Offline** timestamp sensors, from the `onlineStatus`, `onlineTime` and `offlineTime` fields the Jackery cloud returns with each device.
+
+When the cloud reports a device offline, all of that device's other entities become unavailable rather than showing the last values received. Cloud Connection, Last Online, Last Offline and Last Updated stay available. After the device has been offline for 10 minutes, a Repair issue is raised; it clears automatically when the device reconnects. See [Troubleshooting](Troubleshooting#device-offline-from-the-jackery-cloud).
+
 ## DC Output Variants
 
 Some Jackery models report DC output as a single combined `odc` property. Others report separate USB (`odcu`) and DC car (`odcc`) properties. When a device reports the separate properties, the combined DC Output entities (sensor and switch) are hidden and only the individual USB and car entities appear.

@@ -90,3 +90,28 @@ automation:
     target:
       entity_id: switch.jackery_transfer_switch_force_charge
 ```
+
+---
+
+## Device Offline Notification
+
+A Repair issue is raised automatically after a device has been offline for 10 minutes. This automation adds a phone notification. Replace the entity IDs and notify service with your own.
+
+```yaml
+automation:
+  alias: "Jackery Device Offline"
+  trigger:
+    platform: state
+    entity_id:
+      - binary_sensor.explorer_5000_cloud_connection
+    to: "off"
+    for:
+      minutes: 10
+  action:
+    service: notify.mobile_app_your_phone
+    data:
+      title: "Jackery offline"
+      message: >
+        {{ trigger.to_state.attributes.friendly_name | replace(" Cloud Connection", "") }}
+        lost its cloud connection. Re-enable Wi-Fi on the device and re-add it in the Jackery app.
+```
