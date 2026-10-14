@@ -20,6 +20,7 @@ from .const import CHARGING_PLAN_DATA, DOMAIN, ENTITY_HELP_TEXT
 from homeassistant.const import EntityCategory
 from .protocol import (
     CHARGING_PLAN_REPEAT_TO_MASK,
+    CloudOnlineAvailabilityMixin,
     charging_plan_repeat_mask,
     charging_plan_repeat_option,
     compose_charging_plan,
@@ -142,7 +143,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(unsubscribe)
 
 
-class JackerySelectEntity(CoordinatorEntity, SelectEntity):
+class JackerySelectEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, SelectEntity):
     """Implementation of a Jackery select."""
 
     entity_description: EntityDescription
@@ -230,7 +231,7 @@ class JackerySelectEntity(CoordinatorEntity, SelectEntity):
         await self.coordinator.async_request_refresh()
 
 
-class JackeryChargingPlanRepeatEntity(CoordinatorEntity, SelectEntity):
+class JackeryChargingPlanRepeatEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, SelectEntity):
     """Select entity for charging-plan repeat masks."""
 
     entity_description: EntityDescription

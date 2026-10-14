@@ -22,6 +22,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .api import JackeryAPI
 from .const import DOMAIN
+from .protocol import CloudOnlineAvailabilityMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def _device_info(device: dict) -> DeviceInfo:
     )
 
 
-class JackeryPlanSensor(CoordinatorEntity, SensorEntity):
+class JackeryPlanSensor(CloudOnlineAvailabilityMixin, CoordinatorEntity, SensorEntity):
     """Sensor showing plan overview for the Transfer Switch."""
 
     def __init__(
@@ -156,7 +157,7 @@ class JackeryPlanSensor(CoordinatorEntity, SensorEntity):
         return attrs
 
 
-class JackeryActivePlanSensor(CoordinatorEntity, SensorEntity):
+class JackeryActivePlanSensor(CloudOnlineAvailabilityMixin, CoordinatorEntity, SensorEntity):
     """Sensor showing the currently executing plan, if any."""
 
     def __init__(self, coordinator: DataUpdateCoordinator, device_info: dict) -> None:
@@ -185,7 +186,7 @@ class JackeryActivePlanSensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class JackeryPlanSwitch(CoordinatorEntity, SwitchEntity):
+class JackeryPlanSwitch(CloudOnlineAvailabilityMixin, CoordinatorEntity, SwitchEntity):
     """Switch to enable/disable a single scheduled plan."""
 
     def __init__(

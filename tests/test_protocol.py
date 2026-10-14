@@ -271,5 +271,64 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(protocol.is_transfer_switch_device({"modelCode": 2001}, {}))
 
 
+class CloudStatusProtocolTests(unittest.TestCase):
+    """Validate cloud online status parsing and entity availability."""
+
+    def test_parse_cloud_status_offline_with_times(self) -> None:
+        status = protocol.parse_cloud_status(
+            {"onlineStatus": 0, "onlineTime": 1791669421000, "offlineTime": 1791669517000}
+        )
+        self.assertIs(status["cloud_online"], False)
+        self.assertEqual(status["cloud_online_time"].timestamp(), 1791669421)
+        self.assertEqual(status["cloud_offline_time"].timestamp(), 1791669517)
+        self.assertIsNotNone(status["cloud_offline_time"].tzinfo)
+
+    def test_parse_cloud_status_online(self) -> None:
+        self.assertEqual(protocol.parse_cloud_status({"onlineStatus": 1}), {"cloud_online": True})
+
+    def test_parse_cloud_status_ignores_missing_or_invalid(self) -> None:
+        self.assertEqual(protocol.parse_cloud_status(None), {})
+        self.assertEqual(protocol.parse_cloud_status({}), {})
+        self.assertEqual(
+            protocol.parse_cloud_status({"onlineTime": 0, "offlineTime": None}), {}
+        )
+
+    def test_is_cloud_online_only_false_when_explicitly_offline(self) -> None:
+        self.assertTrue(protocol.is_cloud_online(None))
+        self.assertTrue(protocol.is_cloud_online({"rb": 50}))
+        self.assertTrue(protocol.is_cloud_online({"cloud_online": True}))
+        self.assertFalse(protocol.is_cloud_online({"cloud_online": False}))
+
+    def _make_entity(self, data, key=None, parent_available=True):
+        class Parent:
+            @property
+            def available(self):
+                return parent_available
+
+        class Entity(protocol.CloudOnlineAvailabilityMixin, Parent):
+            pass
+
+        entity = Entity()
+        entity.coordinator = types.SimpleNamespace(data=data)
+        if key is not None:
+            entity.entity_description = types.SimpleNamespace(key=key)
+        return entity
+
+    def test_mixin_marks_data_entities_unavailable_when_offline(self) -> None:
+        offline = {"cloud_online": False, "rb": 54}
+        self.assertFalse(self._make_entity(offline, "rb").available)
+        self.assertFalse(self._make_entity(offline).available)
+        self.assertTrue(self._make_entity({"cloud_online": True}, "rb").available)
+
+    def test_mixin_keeps_cloud_status_entities_available(self) -> None:
+        offline = {"cloud_online": False}
+        for key in ("cloud_online", "cloud_offline_time", "cloud_online_time", "last_updated"):
+            self.assertTrue(self._make_entity(offline, key).available, key)
+
+    def test_mixin_respects_parent_unavailable(self) -> None:
+        entity = self._make_entity({"cloud_online": True}, "cloud_online", parent_available=False)
+        self.assertFalse(entity.available)
+
+
 if __name__ == "__main__":
     unittest.main()

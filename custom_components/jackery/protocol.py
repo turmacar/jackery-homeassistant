@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -397,3 +398,52 @@ def supported_keys(
 def control_spec(key: str) -> JackeryControlSpec:
     """Return the control spec for a property key."""
     return CONTROL_SPECS[key]
+
+
+CLOUD_ONLINE_KEY = "cloud_online"
+CLOUD_ONLINE_TIME_KEY = "cloud_online_time"
+CLOUD_OFFLINE_TIME_KEY = "cloud_offline_time"
+# Entities that describe the cloud link itself and must stay available while offline.
+CLOUD_STATUS_KEYS = frozenset(
+    {CLOUD_ONLINE_KEY, CLOUD_ONLINE_TIME_KEY, CLOUD_OFFLINE_TIME_KEY, "last_updated"}
+)
+
+
+def parse_cloud_status(device: Mapping[str, object] | None) -> dict[str, object]:
+    """Extract online state and transition times from a property response's device block."""
+    if not isinstance(device, Mapping):
+        return {}
+    status: dict[str, object] = {}
+    online = device.get("onlineStatus")
+    if online is not None:
+        status[CLOUD_ONLINE_KEY] = online == 1
+    for src, dst in (
+        ("onlineTime", CLOUD_ONLINE_TIME_KEY),
+        ("offlineTime", CLOUD_OFFLINE_TIME_KEY),
+    ):
+        ts = device.get(src)
+        if isinstance(ts, (int, float)) and not isinstance(ts, bool) and ts > 0:
+            status[dst] = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+    return status
+
+
+def is_cloud_online(properties: Mapping[str, object] | None) -> bool:
+    """Return False only when the cloud explicitly reports the device offline."""
+    return not properties or properties.get(CLOUD_ONLINE_KEY) is not False
+
+
+class CloudOnlineAvailabilityMixin:
+    """Mark coordinator entities unavailable while the device is offline from the cloud."""
+
+    @property
+    def available(self) -> bool:
+        try:
+            parent_available = super().available
+        except AttributeError:
+            parent_available = True
+        if not parent_available:
+            return False
+        description = getattr(self, "entity_description", None)
+        if getattr(description, "key", None) in CLOUD_STATUS_KEYS:
+            return True
+        return is_cloud_online(self.coordinator.data)

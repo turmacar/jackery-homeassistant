@@ -56,6 +56,9 @@ ENTITY_HELP_TEXT: dict[str, str] = {
     "uo": "Device timezone offset from UTC (converted to hours).",
     "pss": "Whether power is supplied by grid or station (batteries/solar).",
     "last_updated": "Timestamp of the last successful data poll from Jackery API.",
+    "cloud_online": "Whether the Jackery cloud currently reports this device as connected.",
+    "cloud_offline_time": "When the Jackery cloud last saw this device disconnect.",
+    "cloud_online_time": "When the Jackery cloud last saw this device connect.",
     "ds": "Total solar energy generated.",
     "dh": "Total household energy consumed.",
     "de": "Total battery energy discharged.",
@@ -424,6 +427,20 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
         name="Last Updated",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="cloud_offline_time",
+        name="Last Offline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:cloud-off-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    JackerySensorEntityDescription(
+        key="cloud_online_time",
+        name="Last Online",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:cloud-check-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     # Energy counters (Transfer Switch)
@@ -918,6 +935,13 @@ SENSOR_DESCRIPTIONS: tuple[JackerySensorEntityDescription, ...] = (
 # - odcc: DC Car Output (for models with separate DC Car toggle)
 # - odcu: USB Output (for models with separate USB toggle)
 BINARY_SENSOR_DESCRIPTIONS: tuple[BinarySensorEntityDescription, ...] = (
+    BinarySensorEntityDescription(
+        key="cloud_online",
+        name="Cloud Connection",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:cloud-sync-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     BinarySensorEntityDescription(
         key="oac",
         name="AC Output",

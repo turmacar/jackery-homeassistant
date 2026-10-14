@@ -35,6 +35,22 @@ except ModuleNotFoundError as err:  # pragma: no cover - dependency provided in 
 
 _LOGGER = logging.getLogger(__name__)
 
+_REDACT_KEYS = frozenset(
+    {"token", "mqttPassWord", "password", "deviceSecret", "randomSalt", "bluetoothKey"}
+)
+
+
+def _redact(value):
+    """Return a copy of an API payload with credential fields masked for logging."""
+    if isinstance(value, dict):
+        return {
+            k: "**REDACTED**" if k in _REDACT_KEYS else _redact(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
 
 class JackeryMqttSession:
     """Persistent single-connection MQTT session for Jackery API.
@@ -318,7 +334,7 @@ class JackeryAPI:
             _LOGGER.debug("Login response status: %s", response.status_code)
             response.raise_for_status()
             data = response.json()
-            _LOGGER.debug("Login response data: %s", data)
+            _LOGGER.debug("Login response data: %s", _redact(data))
 
             if data.get("code") == 0 and "token" in data:
                 self._token = data["token"]
@@ -368,7 +384,7 @@ class JackeryAPI:
             _LOGGER.debug("API response status: %s", response.status_code)
             response.raise_for_status()
             data = response.json()
-            _LOGGER.debug("API response data: %s", data)
+            _LOGGER.debug("API response data: %s", _redact(data))
 
             # 10402 = token expired; 10403 = session displaced by another login
             if data.get("code") in (10402, 10403):

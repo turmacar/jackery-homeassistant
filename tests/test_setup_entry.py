@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -77,6 +78,7 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     update_coordinator_mod = ensure_stub_module(
         "homeassistant.helpers.update_coordinator"
     )
+    issue_registry_mod = ensure_stub_module("homeassistant.helpers.issue_registry")
     dt_mod = ensure_stub_module("homeassistant.util.dt")
 
     class ConfigEntry:
@@ -147,11 +149,17 @@ def install_homeassistant_stubs(stubbed_modules: dict[str, object]) -> None:
     exceptions_mod.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
     update_coordinator_mod.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator_mod.UpdateFailed = UpdateFailed
+    issue_registry_mod.IssueSeverity = types.SimpleNamespace(WARNING="warning")
+    issue_registry_mod.async_create_issue = lambda *args, **kwargs: None
+    issue_registry_mod.async_delete_issue = lambda *args, **kwargs: None
     dt_mod.now = lambda: "2026-04-18T19:00:00+01:00"
+    dt_mod.utcnow = lambda: datetime.now(timezone.utc)
+    dt_mod.as_local = lambda value: value
 
     homeassistant.helpers = helpers
     homeassistant.util = util
     helpers.update_coordinator = update_coordinator_mod
+    helpers.issue_registry = issue_registry_mod
     util.dt = dt_mod
 
 
@@ -173,6 +181,16 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
     protocol_mod.is_transfer_switch_device = lambda device_info=None, properties=None: (
         (device_info or {}).get("modelCode") == 2001
     )
+    real_protocol = load_module(
+        f"{TEST_PACKAGE}_real_protocol", PACKAGE_ROOT / "protocol.py", stubbed_modules
+    )
+    for name in (
+        "CLOUD_OFFLINE_TIME_KEY",
+        "CLOUD_STATUS_KEYS",
+        "is_cloud_online",
+        "parse_cloud_status",
+    ):
+        setattr(protocol_mod, name, getattr(real_protocol, name))
 
     api_mod = types.ModuleType(f"{TEST_PACKAGE}.api")
 
@@ -577,6 +595,106 @@ class TransferSwitchCoordinatorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("nm", coordinator.data["_circuits"][0])
         self.assertEqual(coordinator.data["_circuits"][0]["pc"], 100)
+
+
+class CloudStatusTests(unittest.IsolatedAsyncioTestCase):
+    """Validate cloud online status parsing and the offline Repair issue."""
+
+    def setUp(self) -> None:
+        api.JackeryAPI.reset()
+        integration.DataUpdateCoordinator.instances = []
+        integration.dt_util.now = lambda: "2026-04-18T19:00:00+01:00"
+        integration.dt_util.utcnow = lambda: datetime.now(timezone.utc)
+        integration.dt_util.as_local = lambda value: value
+        self.created: list = []
+        self.deleted: list = []
+        integration.ir.IssueSeverity = types.SimpleNamespace(WARNING="warning")
+        integration.ir.async_create_issue = (
+            lambda hass, domain, issue_id, **kwargs: self.created.append(
+                (domain, issue_id, kwargs)
+            )
+        )
+        integration.ir.async_delete_issue = (
+            lambda hass, domain, issue_id: self.deleted.append((domain, issue_id))
+        )
+
+    @staticmethod
+    def _ms(value: datetime) -> int:
+        return int(value.timestamp() * 1000)
+
+    async def _setup(self, device_block):
+        hass = AsyncSetupEntryTests._make_hass()
+        entry = AsyncSetupEntryTests._make_entry()
+        api.JackeryAPI.device_list_result = {
+            "data": [{"devId": "device-1", "devName": "Explorer 5000 Plus"}]
+        }
+        api.JackeryAPI.device_detail_results = {
+            "device-1": {"data": {"device": device_block, "properties": {"rb": 54}}}
+        }
+        await integration.async_setup_entry(hass, entry)
+        return hass.data["jackery"][entry.entry_id]["coordinators"]["device-1"]
+
+    async def test_cloud_status_added_to_coordinator_data(self) -> None:
+        offline_at = datetime(2026, 10, 10, 21, 58, 37, tzinfo=timezone.utc)
+        online_at = datetime(2026, 10, 3, 15, 27, 1, tzinfo=timezone.utc)
+        coordinator = await self._setup(
+            {
+                "onlineStatus": 0,
+                "onlineTime": self._ms(online_at),
+                "offlineTime": self._ms(offline_at),
+                "deviceSecret": "secret",
+            }
+        )
+
+        self.assertIs(coordinator.data["cloud_online"], False)
+        self.assertEqual(coordinator.data["cloud_offline_time"], offline_at)
+        self.assertEqual(coordinator.data["cloud_online_time"], online_at)
+        self.assertNotIn("deviceSecret", coordinator.data)
+        self.assertEqual(coordinator.data["rb"], 54)
+
+    async def test_issue_raised_when_offline_past_delay(self) -> None:
+        offline_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        await self._setup({"onlineStatus": 0, "offlineTime": self._ms(offline_at)})
+
+        self.assertEqual(len(self.created), 1)
+        domain, issue_id, kwargs = self.created[0]
+        self.assertEqual((domain, issue_id), ("jackery", "device_offline_device-1"))
+        self.assertEqual(kwargs["translation_key"], "device_offline")
+        self.assertFalse(kwargs["is_fixable"])
+        self.assertEqual(
+            kwargs["translation_placeholders"]["device_name"], "Explorer 5000 Plus"
+        )
+
+    async def test_issue_not_raised_for_short_offline_blip(self) -> None:
+        offline_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        await self._setup({"onlineStatus": 0, "offlineTime": self._ms(offline_at)})
+
+        self.assertEqual(self.created, [])
+
+    async def test_issue_cleared_when_device_back_online(self) -> None:
+        offline_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        coordinator = await self._setup(
+            {"onlineStatus": 0, "offlineTime": self._ms(offline_at)}
+        )
+        api.JackeryAPI.device_detail_results["device-1"]["data"]["device"] = {
+            "onlineStatus": 1
+        }
+
+        data = await coordinator.update_method()
+
+        self.assertIs(data["cloud_online"], True)
+        self.assertIn(("jackery", "device_offline_device-1"), self.deleted)
+
+    async def test_issue_untouched_while_http_poll_is_stale(self) -> None:
+        coordinator = await self._setup({"onlineStatus": 1})
+        self.deleted.clear()
+        api.JackeryAPI.device_detail_error = ConnectionError("dns blip")
+
+        data = await coordinator.update_method()
+
+        self.assertIs(data["cloud_online"], True)
+        self.assertEqual(self.created, [])
+        self.assertEqual(self.deleted, [])
 
 
 class PlanServiceTests(unittest.IsolatedAsyncioTestCase):

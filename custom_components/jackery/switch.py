@@ -19,6 +19,7 @@ from .api import JackeryAPI
 from .const import CHARGING_PLAN_SWITCH, DOMAIN, ENTITY_HELP_TEXT
 from homeassistant.const import EntityCategory
 from .protocol import (
+    CloudOnlineAvailabilityMixin,
     control_spec,
     has_charging_plan_switch_support,
     supported_keys,
@@ -194,7 +195,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(unsubscribe)
 
 
-class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
+class JackerySwitchEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, SwitchEntity):
     """Implementation of a Jackery switch."""
 
     entity_description: EntityDescription
@@ -280,7 +281,7 @@ class JackerySwitchEntity(CoordinatorEntity, SwitchEntity):
         await self.coordinator.async_request_refresh()
 
 
-class JackeryChargingPlanSwitchEntity(CoordinatorEntity, SwitchEntity):
+class JackeryChargingPlanSwitchEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, SwitchEntity):
     """Implementation of the charging-plan master switch."""
 
     entity_description: EntityDescription

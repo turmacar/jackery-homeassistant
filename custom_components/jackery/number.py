@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import (
 from .api import JackeryAPI
 from .const import DOMAIN, ENTITY_HELP_TEXT
 from homeassistant.const import EntityCategory
-from .protocol import control_spec, supported_keys
+from .protocol import CloudOnlineAvailabilityMixin, control_spec, supported_keys
 
 NUMBER_KEYS = ("ast", "pm", "sltb", "ddt", "autoDt", "cdsDt", "selfDt")
 
@@ -93,7 +93,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class JackeryNumberEntity(CoordinatorEntity, NumberEntity):
+class JackeryNumberEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, NumberEntity):
     """Implementation of a Jackery number."""
 
     entity_description: EntityDescription

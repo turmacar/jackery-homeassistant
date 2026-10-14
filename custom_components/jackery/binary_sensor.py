@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN, BINARY_SENSOR_DESCRIPTIONS, ENTITY_HELP_TEXT
-from .protocol import is_supported_property
+from .protocol import CloudOnlineAvailabilityMixin, is_supported_property
 
 
 async def async_setup_entry(
@@ -83,7 +83,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(unsubscribe)
 
 
-class JackeryBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class JackeryBinarySensor(CloudOnlineAvailabilityMixin, CoordinatorEntity, BinarySensorEntity):
     """Implementation of a Jackery binary sensor."""
 
     entity_description: BinarySensorEntityDescription

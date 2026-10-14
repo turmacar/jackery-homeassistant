@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN, SENSOR_DESCRIPTIONS, JackerySensorEntityDescription, ENTITY_HELP_TEXT
-from .protocol import is_supported_property
+from .protocol import CloudOnlineAvailabilityMixin, is_supported_property
 from .plan import JackeryPlanSensor, JackeryActivePlanSensor, has_plans
 from .circuit import JackeryCircuitPowerSensor, has_circuits, _get_circuits, get_logical_circuits
 
@@ -110,7 +110,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(unsubscribe)
 
 
-class JackerySensor(CoordinatorEntity, SensorEntity):
+class JackerySensor(CloudOnlineAvailabilityMixin, CoordinatorEntity, SensorEntity):
     """Implementation of a Jackery sensor."""
 
     entity_description: JackerySensorEntityDescription

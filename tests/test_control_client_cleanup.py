@@ -143,6 +143,7 @@ def install_dependency_stubs(stubbed_modules: dict[str, object]) -> None:
     update_coordinator_mod = ensure_stub_module(
         "homeassistant.helpers.update_coordinator"
     )
+    issue_registry_mod = ensure_stub_module("homeassistant.helpers.issue_registry")
     dt_mod = ensure_stub_module("homeassistant.util.dt")
 
     class ConfigEntry:
@@ -187,11 +188,15 @@ def install_dependency_stubs(stubbed_modules: dict[str, object]) -> None:
     exceptions_mod.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
     update_coordinator_mod.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator_mod.UpdateFailed = UpdateFailed
+    issue_registry_mod.IssueSeverity = types.SimpleNamespace(WARNING="warning")
+    issue_registry_mod.async_create_issue = lambda *args, **kwargs: None
+    issue_registry_mod.async_delete_issue = lambda *args, **kwargs: None
     dt_mod.now = lambda: None
 
     homeassistant.helpers = helpers
     homeassistant.util = util
     helpers.update_coordinator = update_coordinator_mod
+    helpers.issue_registry = issue_registry_mod
     util.dt = dt_mod
 
 
@@ -214,6 +219,10 @@ def install_package_stubs(stubbed_modules: dict[str, object]) -> None:
     protocol_mod.is_transfer_switch_device = lambda device_info=None, properties=None: (
         (device_info or {}).get("modelCode") == 2001
     )
+    protocol_mod.CLOUD_OFFLINE_TIME_KEY = "cloud_offline_time"
+    protocol_mod.CLOUD_STATUS_KEYS = frozenset()
+    protocol_mod.is_cloud_online = lambda properties: True
+    protocol_mod.parse_cloud_status = lambda device: {}
     _install_stub_module(stubbed_modules, f"{TEST_PACKAGE}.protocol", protocol_mod)
 
 
@@ -792,6 +801,30 @@ class HttpSessionTests(unittest.TestCase):
 
         self.assertTrue(result)
         mock_inner.assert_not_called()
+
+    def test_redact_masks_credentials_and_device_secrets(self) -> None:
+        """Debug logging must not expose tokens, MQTT passwords, or device secrets."""
+        payload = {
+            "code": 0,
+            "token": "tok",
+            "data": {
+                "mqttPassWord": "mqtt",
+                "device": {"deviceSecret": "s", "randomSalt": "r", "onlineStatus": 0},
+                "properties": {"rb": 54},
+                "list": [{"deviceSecret": "s2"}],
+            },
+        }
+
+        redacted = api._redact(payload)
+
+        self.assertEqual(redacted["token"], "**REDACTED**")
+        self.assertEqual(redacted["data"]["mqttPassWord"], "**REDACTED**")
+        self.assertEqual(redacted["data"]["device"]["deviceSecret"], "**REDACTED**")
+        self.assertEqual(redacted["data"]["device"]["randomSalt"], "**REDACTED**")
+        self.assertEqual(redacted["data"]["list"][0]["deviceSecret"], "**REDACTED**")
+        self.assertEqual(redacted["data"]["device"]["onlineStatus"], 0)
+        self.assertEqual(redacted["data"]["properties"], {"rb": 54})
+        self.assertEqual(payload["data"]["device"]["deviceSecret"], "s")
 
 
 class HttpSessionAsyncTests(unittest.IsolatedAsyncioTestCase):

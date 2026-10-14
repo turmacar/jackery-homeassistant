@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -19,7 +20,14 @@ from homeassistant.util import dt as dt_util
 
 from .api import JackeryAPI, JackeryAuthenticationError
 from .const import BINARY_SENSOR_DESCRIPTIONS, DOMAIN, POLLING_INTERVAL_SEC, SENSOR_DESCRIPTIONS
-from .protocol import CONTROL_SPECS, is_transfer_switch_device
+from .protocol import (
+    CLOUD_OFFLINE_TIME_KEY,
+    CLOUD_STATUS_KEYS,
+    CONTROL_SPECS,
+    is_cloud_online,
+    is_transfer_switch_device,
+    parse_cloud_status,
+)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -30,6 +38,50 @@ PLATFORMS: list[Platform] = [
     Platform.TEXT,
 ]
 _LOGGER = logging.getLogger(__name__)
+
+# Ignore short cloud reconnect blips before asking the user to intervene.
+OFFLINE_ISSUE_DELAY = timedelta(minutes=10)
+
+
+def _offline_issue_id(device_id: str) -> str:
+    return f"device_offline_{device_id}"
+
+
+def _sync_offline_issue(
+    hass: HomeAssistant,
+    device_id: str,
+    device_name: str,
+    properties: dict,
+    offline_seen: list,
+) -> None:
+    """Raise a Repair issue once a device has been offline long enough, clear it when back."""
+    issue_id = _offline_issue_id(device_id)
+    if is_cloud_online(properties):
+        offline_seen[0] = None
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+
+    now = dt_util.utcnow()
+    since = properties.get(CLOUD_OFFLINE_TIME_KEY)
+    if not isinstance(since, datetime):
+        if offline_seen[0] is None:
+            offline_seen[0] = now
+        since = offline_seen[0]
+    if now - since < OFFLINE_ISSUE_DELAY:
+        return
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="device_offline",
+        translation_placeholders={
+            "device_name": device_name,
+            "offline_since": dt_util.as_local(since).strftime("%Y-%m-%d %H:%M"),
+        },
+    )
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -71,6 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         | set(CONTROL_SPECS)
         | {f"{s}_pack_{i}_rb" for s in ("ac1", "ac2") for i in range(1, 6)}
         | {"last_updated", "_plans", "_circuits"}
+        | CLOUD_STATUS_KEYS
     )
 
     coordinators = {}
@@ -99,6 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # instead of greying out the whole device on a single failed poll.
         properties_cache: dict[str, dict] = {"properties": {}}
         last_success_time: list = [None]
+        offline_seen_time: list = [None]
         http_failure_streak = [0]
         plan_poll_counter = [0]
         circuit_poll_counter = [0]
@@ -109,6 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def _async_update_data(
             api_client=api,
             dev_id=device_id,
+            dev_name=device_name,
             dev_sn=device_sn,
             is_box=is_transfer_switch,
             _counter=plan_poll_counter,
@@ -117,6 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _circuit_cache=circuit_cache,
             _props_cache=properties_cache,
             _last_success=last_success_time,
+            _offline_seen=offline_seen_time,
             _failures=http_failure_streak,
         ):
             """Fetch data from API endpoint.
@@ -133,6 +189,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     timeout=10,
                 )
                 properties = dict(data.get("data", {}).get("properties", {}))
+                properties.update(parse_cloud_status(data.get("data", {}).get("device")))
                 # Cache a copy of the raw payload for fallback reuse.
                 _props_cache["properties"] = dict(properties)
                 _last_success[0] = dt_util.now()
@@ -244,6 +301,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # last_updated reflects the last *successful* HTTP fetch so a stale
             # fallback is timestamped for the UI.
             properties["last_updated"] = _last_success[0] or dt_util.now()
+            if not stale:
+                _sync_offline_issue(hass, dev_id, dev_name, properties, _offline_seen)
             return properties
 
         # Pre-seed plan and circuit caches before first coordinator refresh

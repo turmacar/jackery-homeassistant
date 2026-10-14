@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import (
 from .api import JackeryAPI
 from .const import CHARGING_PLAN_DATA, DOMAIN
 from .protocol import (
+    CloudOnlineAvailabilityMixin,
     compose_charging_plan,
     has_charging_plan_data_support,
     parse_charging_plan,
@@ -111,7 +112,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(unsubscribe)
 
 
-class JackeryChargingPlanTimeEntity(CoordinatorEntity, TextEntity):
+class JackeryChargingPlanTimeEntity(CloudOnlineAvailabilityMixin, CoordinatorEntity, TextEntity):
     """Text entity for the charging-plan time-range segment."""
 
     entity_description: EntityDescription

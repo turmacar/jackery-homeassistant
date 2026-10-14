@@ -30,6 +30,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .api import JackeryAPI
 from .const import DOMAIN
+from .protocol import CloudOnlineAvailabilityMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ def _device_info(device: dict) -> DeviceInfo:
     )
 
 
-class JackeryCircuitPowerSensor(CoordinatorEntity, SensorEntity):
+class JackeryCircuitPowerSensor(CloudOnlineAvailabilityMixin, CoordinatorEntity, SensorEntity):
     """Sensor showing per-circuit power consumption.
 
     For split-phase pairs, reports the sum of both circuits' power.
@@ -196,7 +197,7 @@ class JackeryCircuitPowerSensor(CoordinatorEntity, SensorEntity):
         return attrs
 
 
-class JackeryCircuitSwitch(CoordinatorEntity, SwitchEntity):
+class JackeryCircuitSwitch(CloudOnlineAvailabilityMixin, CoordinatorEntity, SwitchEntity):
     """Switch to turn a circuit on or off.
 
     For split-phase pairs, toggles both circuits together.
